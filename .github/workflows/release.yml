@@ -1,0 +1,22 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  semantic-release:
+    runs-on: ubuntu-latest
+    concurrency: release
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Semantic Release
+        uses: cycjimmy/semantic-release-action@v3
+        env:
+          GITHUB_TOKEN: ${{ secrets.PAT }}
