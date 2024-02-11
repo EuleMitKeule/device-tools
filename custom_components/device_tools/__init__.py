@@ -5,9 +5,8 @@ import logging
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.helpers.device_registry import CONNECTION_NETWORK_MAC
 from homeassistant.helpers.device_registry import async_get as async_get_device_registry
-
-from custom_components.device_tools.const import CONNECTION_DEVICE_TOOLS
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -32,15 +31,11 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
 
     dr.async_update_device(
         google_home_device.id,
-        merge_connections={
-            (CONNECTION_DEVICE_TOOLS, "3e7573d80740e683a28bdfa7aa4fcab1")
-        },
+        merge_connections={(CONNECTION_NETWORK_MAC, "f0:ef:86:75:e1:bf")},
     )
     dr.async_update_device(
         chromecast_device.id,
-        merge_connections={
-            (CONNECTION_DEVICE_TOOLS, "3e7573d80740e683a28bdfa7aa4fcab1")
-        },
+        merge_connections={(CONNECTION_NETWORK_MAC, "f0:ef:86:75:e1:bf")},
     )
 
     return True
