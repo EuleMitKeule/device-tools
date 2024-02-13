@@ -21,6 +21,7 @@ from .const import (
     CONF_MODEL,
     CONF_MODIFICATION_NAME,
     CONF_MODIFICATION_TYPE,
+    CONF_SERIAL_NUMBER,
     CONF_VIA_DEVICE,
     DOMAIN,
     ModificationType,
@@ -102,6 +103,7 @@ class DeviceToolsConfigFlow(ConfigFlow, domain=DOMAIN):
                         vol.Optional(CONF_VIA_DEVICE): str,
                         vol.Optional(CONF_SW_VERSION): str,
                         vol.Optional(CONF_HW_VERSION): str,
+                        vol.Optional(CONF_SERIAL_NUMBER): str,
                         vol.Optional(CONF_CONNECTION_NETWORK_MAC): str,
                         vol.Optional(CONF_CONNECTION_BLUETOOTH_MAC): str,
                         vol.Optional(CONF_CONNECTION_UPNP): str,
@@ -193,6 +195,7 @@ class DeviceToolsConfigFlow(ConfigFlow, domain=DOMAIN):
                     model=self._user_input_main.get(CONF_MODEL),
                     sw_version=self._user_input_main.get(CONF_SW_VERSION),
                     hw_version=self._user_input_main.get(CONF_HW_VERSION),
+                    serial_number=self._user_input_main.get(CONF_SERIAL_NUMBER),
                     via_device=self._user_input_main.get(CONF_VIA_DEVICE),
                     connections={
                         (connection_type, self._user_input_main[connection_type])

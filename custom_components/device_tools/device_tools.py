@@ -127,6 +127,11 @@ class DeviceTools:
         ):
             has_differences = True
         if (
+            attribute_modification["serial_number"] is not None
+            and device.serial_number != attribute_modification["serial_number"]
+        ):
+            has_differences = True
+        if (
             attribute_modification["via_device"] is not None
             and device.via_device != attribute_modification["via_device"]
         ):
@@ -151,6 +156,8 @@ class DeviceTools:
             args["sw_version"] = attribute_modification["sw_version"]
         if attribute_modification["hw_version"] is not None:
             args["hw_version"] = attribute_modification["hw_version"]
+        if attribute_modification["serial_number"] is not None:
+            args["serial_number"] = attribute_modification["serial_number"]
         if attribute_modification["via_device"] is not None:
             args["via_device"] = attribute_modification["via_device"]
         if attribute_modification["connections"] is not None:

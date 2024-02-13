@@ -1,0 +1,40 @@
+{
+    "config": {
+        "abort": {
+            "already_configured": "[%key:common::config_flow::abort::already_configured_device%]"
+        },
+        "flow_title": "Add new modification",
+        "step": {
+            "user": {
+                "title": "Add new modification",
+                "data": {
+                    "modification_name": "Name of the modification",
+                    "modification_type": "Type of the modification"
+                }
+            },
+            "attributes": {
+                "title": "Configure device attributes",
+                "data": {
+                    "device_id": "Device",
+                    "manufacturer": "Manufacturer",
+                    "model": "Model",
+                    "via_device": "Via device ID",
+                    "sw_version": "Software version",
+                    "hw_version": "Hardware version",
+                    "serial_number": "Serial number",
+                    "connection_network_mac": "Network MAC Address",
+                    "connection_bluetooth_mac": "Bluetooth MAC Address",
+                    "connection_upnp": "UPnP ID",
+                    "connection_zigbee": "Zigbee ID"
+                }
+            },
+            "entities": {
+                "title": "Configure device entities",
+                "data": {
+                    "device_id": "Device",
+                    "entities": "Entities"
+                }
+            }
+        }
+    }
+}

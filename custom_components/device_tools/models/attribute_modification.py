@@ -8,5 +8,6 @@ class AttributeModification(DeviceModification):
     model: str | None
     sw_version: str | None
     hw_version: str | None
+    serial_number: str | None
     via_device: str | None
     connections: list[tuple[str, str]] | None
