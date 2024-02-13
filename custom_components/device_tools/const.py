@@ -22,9 +22,11 @@ CONF_CONNECTION_BLUETOOTH_MAC = "connection_bluetooth_mac"
 CONF_CONNECTION_UPNP = "connection_upnp"
 CONF_CONNECTION_ZIGBEE = "connection_zigbee"
 CONF_IDENTIFIERS = "identifiers"
+CONF_ENTITIES = "entities"
 
 
 class ModificationType(StrEnum):
     """Modification type enum."""
 
     ATTRIBUTES = "attributes"
+    ENTITIES = "entities"

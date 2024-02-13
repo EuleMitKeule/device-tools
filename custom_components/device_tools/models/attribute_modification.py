@@ -1,4 +1,3 @@
-
 from .device_modification import DeviceModification
 
 
@@ -10,4 +9,4 @@ class AttributeModification(DeviceModification):
     sw_version: str | None
     hw_version: str | None
     via_device: str | None
-    connections: set[tuple[str, str]] | None
+    connections: list[tuple[str, str]] | None

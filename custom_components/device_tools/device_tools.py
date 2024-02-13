@@ -2,6 +2,7 @@ import asyncio
 import logging
 from typing import Any
 
+from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import (
     DeviceEntry,
@@ -9,26 +10,39 @@ from homeassistant.helpers.device_registry import (
 from homeassistant.helpers.device_registry import (
     async_get as async_get_device_registry,
 )
+from homeassistant.helpers.entity_registry import (
+    async_get as async_get_entity_registry,
+)
 
 from .const import DOMAIN, SCAN_INTERVAL, ModificationType
 from .models.attribute_modification import AttributeModification
 from .models.config_entry_data import DeviceToolsConfigEntryData
 from .models.device_modification import DeviceModification
+from .models.entity_modification import EntityModification
 
 
 class DeviceTools:
+    """Device Tools class."""
+
     def __init__(self, hass: HomeAssistant, logger: logging.Logger) -> None:
+        """Initialize."""
+
         self._hass = hass
         self._logger = logger
         self._device_registry = async_get_device_registry(hass)
+        self._entity_registry = async_get_entity_registry(hass)
         self._run_task = hass.async_create_background_task(self.async_run(), DOMAIN)
         self._device_modifications: list[DeviceModification] = []
 
     @callback
-    def async_on_entries_changed(self) -> None:
+    def async_get_entries(self) -> None:
+        """Handle config entry changes."""
+
         config_entries = self._hass.config_entries.async_entries(DOMAIN)
         config_entry_datas: list[DeviceToolsConfigEntryData] = [
-            config_entry.data for config_entry in config_entries
+            config_entry.data
+            for config_entry in config_entries
+            if config_entry.state == ConfigEntryState.LOADED
         ]
 
         self._device_modifications = [
@@ -42,10 +56,10 @@ class DeviceTools:
 
         while True:
             try:
-                self.async_on_entries_changed()
+                self.async_get_entries()
                 await self.async_update()
             except Exception as e:  # pylint: disable=broad-except
-                self._logger.error("Error during update: %s", e)
+                self._logger.exception(e)
 
             await asyncio.sleep(SCAN_INTERVAL)
 
@@ -72,6 +86,10 @@ class DeviceTools:
                     await self._async_apply_attribute_modification(
                         device, device_modification
                     )
+                case ModificationType.ENTITIES:
+                    await self._async_apply_entity_modification(
+                        device, device_modification
+                    )
                 case _:
                     self._logger.error(
                         "[%s] Unknown modification type: %s",
@@ -85,6 +103,7 @@ class DeviceTools:
         self, device: DeviceEntry, attribute_modification: AttributeModification
     ) -> None:
         """Apply attribute modification to a device."""
+
         has_differences: bool = False
 
         if (
@@ -112,9 +131,10 @@ class DeviceTools:
             and device.via_device != attribute_modification["via_device"]
         ):
             has_differences = True
-        if (
-            attribute_modification["connections"] is not None
-            and device.connections != attribute_modification["connections"]
+        if attribute_modification[
+            "connections"
+        ] is not None and device.connections != set(
+            attribute_modification["connections"]
         ):
             has_differences = True
 
@@ -134,9 +154,35 @@ class DeviceTools:
         if attribute_modification["via_device"] is not None:
             args["via_device"] = attribute_modification["via_device"]
         if attribute_modification["connections"] is not None:
-            args["merge_connections"] = attribute_modification["connections"]
+            args["merge_connections"] = set(attribute_modification["connections"])
 
         self._device_registry.async_update_device(
             device.id,
             **args,
         )
+
+    async def _async_apply_entity_modification(
+        self, device: DeviceEntry, entity_modification: EntityModification
+    ) -> None:
+        """Apply entity modification to a device."""
+
+        entities = [
+            self._entity_registry.async_get(entity_id)
+            for entity_id in entity_modification["entities"]
+        ]
+
+        for entity in entities:
+            if entity is None:
+                self._logger.error(
+                    "[%s] Entity not found (id: %s)",
+                    device.name,
+                    entity_modification["entities"],
+                )
+                continue
+
+            if entity.device_id == device.id:
+                continue
+
+            self._entity_registry.async_update_entity(
+                entity.entity_id, device_id=device.id
+            )

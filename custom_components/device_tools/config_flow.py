@@ -1,12 +1,13 @@
+import logging
 from typing import TYPE_CHECKING, Any
 
 import voluptuous as vol
 from homeassistant.components.mqtt.const import CONF_SW_VERSION
 from homeassistant.config_entries import ConfigEntry, ConfigFlow, OptionsFlow
-from homeassistant.core import callback
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers import selector
 from homeassistant.helpers.device_registry import async_get as async_get_device_registry
+from homeassistant.helpers.entity_registry import async_get as async_get_entity_registry
 
 from .const import (
     CONF_CONNECTION_BLUETOOTH_MAC,
@@ -14,6 +15,7 @@ from .const import (
     CONF_CONNECTION_UPNP,
     CONF_CONNECTION_ZIGBEE,
     CONF_DEVICE_ID,
+    CONF_ENTITIES,
     CONF_HW_VERSION,
     CONF_MANUFACTURER,
     CONF_MODEL,
@@ -26,6 +28,9 @@ from .const import (
 from .models.attribute_modification import AttributeModification
 from .models.config_entry_data import DeviceToolsConfigEntryData
 from .models.device_modification import DeviceModification
+from .models.entity_modification import EntityModification
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class DeviceToolsConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -68,6 +73,8 @@ class DeviceToolsConfigFlow(ConfigFlow, domain=DOMAIN):
         match modification_type:
             case ModificationType.ATTRIBUTES:
                 return await self.async_step_attributes()
+            case ModificationType.ENTITIES:
+                return await self.async_step_entities()
 
     async def async_step_attributes(
         self, user_input: dict[str, Any] | None = None
@@ -99,6 +106,51 @@ class DeviceToolsConfigFlow(ConfigFlow, domain=DOMAIN):
                         vol.Optional(CONF_CONNECTION_BLUETOOTH_MAC): str,
                         vol.Optional(CONF_CONNECTION_UPNP): str,
                         vol.Optional(CONF_CONNECTION_ZIGBEE): str,
+                    }
+                ),
+            )
+
+        self._user_input_main = user_input
+
+        return await self.async_step_finish()
+
+    async def async_step_entities(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Handle the entities step."""
+
+        dr = async_get_device_registry(self.hass)
+        er = async_get_entity_registry(self.hass)
+
+        if user_input is None:
+            return self.async_show_form(
+                step_id="entities",
+                data_schema=vol.Schema(
+                    {
+                        vol.Required(CONF_DEVICE_ID): selector.SelectSelector(
+                            selector.SelectSelectorConfig(
+                                options=[
+                                    {"value": device.id, "label": device.name}
+                                    for device in dr.devices.values()
+                                ],
+                                mode=selector.SelectSelectorMode.DROPDOWN,
+                            )
+                        ),
+                        vol.Required(CONF_ENTITIES): selector.SelectSelector(
+                            selector.SelectSelectorConfig(
+                                options=[
+                                    {
+                                        "value": entity.id,
+                                        "label": entity.name
+                                        if entity.name is not None
+                                        else entity.entity_id,
+                                    }
+                                    for entity in er.entities.values()
+                                ],
+                                mode=selector.SelectSelectorMode.DROPDOWN,
+                                multiple=True,
+                            )
+                        ),
                     }
                 ),
             )
@@ -153,6 +205,14 @@ class DeviceToolsConfigFlow(ConfigFlow, domain=DOMAIN):
                         if self._user_input_main.get(connection_type)
                     },
                 )
+            case ModificationType.ENTITIES:
+                device_modification = EntityModification(
+                    modification_name=modification_name,
+                    modification_type=modification_type,
+                    device_id=device_id,
+                    device_name=device_name,
+                    entities=self._user_input_main.get(CONF_ENTITIES),
+                )
 
         return self.async_create_entry(
             title=modification_name,
@@ -163,13 +223,13 @@ class DeviceToolsConfigFlow(ConfigFlow, domain=DOMAIN):
             ),
         )
 
-    @staticmethod
-    @callback
-    def async_get_options_flow(
-        config_entry: ConfigEntry,
-    ) -> OptionsFlow:
-        """Create the options flow."""
-        return OptionsFlowHandler(config_entry)
+    # @staticmethod
+    # @callback
+    # def async_get_options_flow(
+    #     config_entry: ConfigEntry,
+    # ) -> OptionsFlow:
+    #     """Create the options flow."""
+    #     return OptionsFlowHandler(config_entry)
 
 
 class OptionsFlowHandler(OptionsFlow):
