@@ -2,7 +2,6 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 import voluptuous as vol
-from homeassistant.components.mqtt.const import CONF_SW_VERSION
 from homeassistant.config_entries import ConfigEntry, ConfigFlow, OptionsFlow
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.data_entry_flow import FlowResult
@@ -32,6 +31,7 @@ from .const import (
     CONF_MODIFICATION_NAME,
     CONF_MODIFICATION_TYPE,
     CONF_SERIAL_NUMBER,
+    CONF_SW_VERSION,
     CONF_VIA_DEVICE,
     DOMAIN,
     ModificationType,
