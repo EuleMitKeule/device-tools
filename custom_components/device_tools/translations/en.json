@@ -18,14 +18,33 @@
                     "device_id": "Device",
                     "manufacturer": "Manufacturer",
                     "model": "Model",
-                    "via_device": "Via device ID",
+                    "via_device_id": "Via device ID",
                     "sw_version": "Software version",
                     "hw_version": "Hardware version",
-                    "serial_number": "Serial number",
-                    "connection_network_mac": "Network MAC Address",
-                    "connection_bluetooth_mac": "Bluetooth MAC Address",
-                    "connection_upnp": "UPnP ID",
-                    "connection_zigbee": "Zigbee ID"
+                    "serial_number": "Serial number"
+                }
+            },
+            "entities": {
+                "title": "Configure device entities",
+                "data": {
+                    "device_id": "Device",
+                    "entities": "Entities"
+                }
+            }
+        }
+    },
+    "options": {
+        "step": {
+            "attributes": {
+                "title": "Configure device attributes",
+                "data": {
+                    "device_id": "Device",
+                    "manufacturer": "Manufacturer",
+                    "model": "Model",
+                    "via_device_id": "Via device ID",
+                    "sw_version": "Software version",
+                    "hw_version": "Hardware version",
+                    "serial_number": "Serial number"
                 }
             },
             "entities": {
