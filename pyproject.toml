@@ -13,6 +13,8 @@ homeassistant = "^2024.2.1"
 [tool.poetry.group.dev.dependencies]
 mypy = "^1.8.0"
 ruff = "^0.2.1"
+homeassistant-stubs = "^2024.2.1"
+voluptuous-stubs = "^0.1.1"
 
 [build-system]
 requires = ["poetry-core"]

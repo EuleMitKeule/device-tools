@@ -1,7 +1,9 @@
 {
     "config": {
         "abort": {
-            "already_configured": "[%key:common::config_flow::abort::already_configured_device%]"
+            "already_configured": "Device is already configured",
+            "device_not_found": "Device not found",
+            "device_disabled": "Device is disabled"
         },
         "flow_title": "Add new modification",
         "step": {
