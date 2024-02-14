@@ -10,6 +10,10 @@ python = ">=3.11, <3.13"
 homeassistant = "^2024.2.1"
 
 
+[tool.poetry.group.dev.dependencies]
+mypy = "^1.8.0"
+ruff = "^0.2.1"
+
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
