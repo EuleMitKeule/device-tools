@@ -4,11 +4,14 @@ import logging
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import config_validation as cv
 
 from .const import DOMAIN
 from .device_tools import DeviceTools
 
 _LOGGER = logging.getLogger(__name__)
+
+CONFIG_SCHEMA = cv.config_entry_only_config_schema
 
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:

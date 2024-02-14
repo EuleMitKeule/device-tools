@@ -2,7 +2,7 @@
     "domain": "device_tools",
     "documentation": "https://github.com/eulemitkeule/device-tools",
     "issue_tracker": "https://github.com/eulemitkeule/device-tools",
-    "codeowners": "@eulemitkeule",
+    "codeowners": "@EuleMitKeule",
     "name": "Device Tools",
     "version": "0.0.0",
     "config_flow": true
