@@ -1,0 +1,181 @@
+name: Code Quality
+
+on:
+  workflow_dispatch:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+  push:
+    branches:
+      - master
+      - develop
+
+jobs:
+  cache:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Load cached Poetry installation
+        id: cached-poetry
+        uses: actions/cache@v4
+        with:
+          path: ~/.local
+          key: poetry-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
+
+      - name: Install Poetry
+        if: steps.cached-poetry.outputs.cache-hit != 'true'
+        uses: snok/install-poetry@v1
+        with:
+          virtualenvs-create: true
+          virtualenvs-in-project: true
+
+      - name: Load cached Poetry venv
+        id: cached-poetry-venv
+        uses: actions/cache@v4
+        with:
+          path: .venv
+          key: poetry-venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
+
+      - name: Install dependencies
+        if: steps.cached-poetry-venv.outputs.cache-hit != 'true'
+        run: poetry install --no-interaction --no-root
+
+      - name: Install package
+        run: poetry install --no-interaction
+
+  ruff:
+    needs: cache
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Load cached Poetry installation
+        uses: actions/cache@v4
+        with:
+          path: ~/.local
+          key: poetry-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
+
+      - name: Load cached Poetry venv
+        uses: actions/cache@v4
+        with:
+          path: ~/.venv
+          key: poetry-venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
+
+      - name: Install package
+        run: |
+          poetry install --no-interaction
+
+      - name: Run ruff
+        run: |
+          poetry run ruff custom_components/device_tools
+
+  mypy:
+    needs: cache
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Load cached Poetry installation
+        uses: actions/cache@v4
+        with:
+          path: ~/.local
+          key: poetry-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
+
+      - name: Load cached Poetry venv
+        uses: actions/cache@v4
+        with:
+          path: ~/.venv
+          key: poetry-venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
+
+      - name: Install package
+        run: |
+          poetry install --no-interaction
+
+      - name: Run mypy
+        run: |
+          poetry run mypy custom_components/device_tools
+
+  hacs:
+    needs: cache
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Load cached Poetry installation
+        uses: actions/cache@v4
+        with:
+          path: ~/.local
+          key: poetry-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
+
+      - name: Load cached Poetry venv
+        uses: actions/cache@v4
+        with:
+          path: ~/.venv
+          key: poetry-venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
+
+      - name: Install package
+        run: |
+          poetry install --no-interaction
+
+      - name: Run HACS
+        uses: "hacs/action@main"
+        with:
+          category: "integration"
+
+  hassfest:
+    needs: cache
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Load cached Poetry installation
+        uses: actions/cache@v4
+        with:
+          path: ~/.local
+          key: poetry-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
+
+      - name: Load cached Poetry venv
+        uses: actions/cache@v4
+        with:
+          path: ~/.venv
+          key: poetry-venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
+
+      - name: Install package
+        run: |
+          poetry install --no-interaction
+
+      - name: Run Hassfest
+        uses: home-assistant/actions/hassfest@master
