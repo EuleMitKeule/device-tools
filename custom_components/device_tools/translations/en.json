@@ -23,11 +23,16 @@
         }
     },
     "options": {
+        "abort": {
+            "device_not_found": "Device not found",
+            "device_disabled": "Device is disabled",
+            "device_already_merged": "Device is already merged",
+            "device_in_use": "Device is in use by another modification"
+        },
         "step": {
             "attributes": {
                 "title": "Configure device attributes",
                 "data": {
-                    "device_id": "Device",
                     "manufacturer": "Manufacturer",
                     "model": "Model",
                     "via_device_id": "Via device ID",
@@ -39,8 +44,13 @@
             "entities": {
                 "title": "Configure device entities",
                 "data": {
-                    "device_id": "Device",
                     "entities": "Entities"
+                }
+            },
+            "merge": {
+                "title": "Merge devices",
+                "data": {
+                    "devices": "Devices to merge"
                 }
             }
         }

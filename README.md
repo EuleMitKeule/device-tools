@@ -8,7 +8,7 @@
 A custom Home Assistant integration that allows you to modify and interact with devices.
 
 > [!CAUTION]
-> This integration is still in early development and has the potential to permanently modify your configuration in a bad way.
+> This integration is still in development and has the potential to permanently modify your configuration in a bad way.
 
 ## Roadmap
 
@@ -16,7 +16,8 @@ The integration will allow the user to...
 * [x] Modify static device attributes
 * [x] Assign entities to devices
 * [x] Create new devices
-* [ ] Merge devices
+* [x] Merge devices
+* [ ] Automatically revert any modification on removal
 
 # Installation
 

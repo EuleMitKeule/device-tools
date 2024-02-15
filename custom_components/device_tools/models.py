@@ -20,6 +20,12 @@ class EntityModification(TypedDict):
     entities: set[str]
 
 
+class MergeModification(TypedDict):
+    """Merge modification data class."""
+
+    devices: set[str]
+
+
 class DeviceModification(TypedDict):
     """Device modification data class."""
 
@@ -28,6 +34,7 @@ class DeviceModification(TypedDict):
     device_name: str
     attribute_modification: AttributeModification | None
     entity_modification: EntityModification | None
+    merge_modification: MergeModification | None
 
 
 class DeviceToolsConfigEntryData(TypedDict):

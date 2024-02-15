@@ -32,6 +32,7 @@ from homeassistant.helpers.selector import (
 from .const import (
     CONF_DEVICE_ID,
     CONF_DEVICE_NAME,
+    CONF_DEVICES,
     CONF_ENTITIES,
     CONF_HW_VERSION,
     CONF_MANUFACTURER,
@@ -49,6 +50,7 @@ from .models import (
     DeviceModification,
     DeviceToolsConfigEntryData,
     EntityModification,
+    MergeModification,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -120,7 +122,8 @@ def _schema_entities(
     return vol.Schema(
         {
             vol.Optional(
-                CONF_ENTITIES, default=entity_modification["entities"]
+                CONF_ENTITIES,
+                description={"suggested_value": entity_modification["entities"]},
             ): SelectSelector(
                 SelectSelectorConfig(
                     options=[
@@ -133,6 +136,40 @@ def _schema_entities(
                             }
                         )
                         for entity in er.entities.values()
+                    ],
+                    mode=SelectSelectorMode.DROPDOWN,
+                    multiple=True,
+                )
+            ),
+        }
+    )
+
+
+def _schema_merge(
+    hass: HomeAssistant, device_id: str, merge_modification: MergeModification
+) -> vol.Schema:
+    """Return the merge schema."""
+
+    dr = async_get_device_registry(hass)
+
+    return vol.Schema(
+        {
+            vol.Optional(
+                CONF_DEVICES,
+                description={"suggested_value": merge_modification["devices"]},
+            ): SelectSelector(
+                SelectSelectorConfig(
+                    options=[
+                        SelectOptionDict(
+                            {
+                                "value": other_device.id,
+                                "label": other_device.name_by_user
+                                or other_device.name
+                                or other_device.id,
+                            }
+                        )
+                        for other_device in dr.devices.values()
+                        if other_device.id != device_id
                     ],
                     mode=SelectSelectorMode.DROPDOWN,
                     multiple=True,
@@ -213,6 +250,11 @@ class DeviceToolsConfigFlow(ConfigFlow, domain=DOMAIN):
     ) -> FlowResult:
         """Handle a flow initialized by the user."""
 
+        other_entries = self._async_current_entries()
+        other_device_ids: set[str] = {
+            entry.data["device_modification"]["device_id"] for entry in other_entries
+        }
+
         if user_input is None:
             return self.async_show_form(
                 step_id="user",
@@ -231,6 +273,7 @@ class DeviceToolsConfigFlow(ConfigFlow, domain=DOMAIN):
                                         }
                                     )
                                     for device in self.device_registry.devices.values()
+                                    if device.id not in other_device_ids
                                 ],
                                 mode=SelectSelectorMode.DROPDOWN,
                             )
@@ -293,6 +336,7 @@ class DeviceToolsConfigFlow(ConfigFlow, domain=DOMAIN):
                     "device_name": device.name_by_user or device.name or device.id,
                     "attribute_modification": None,
                     "entity_modification": None,
+                    "merge_modification": None,
                 }
             )
         elif user_input is not None:
@@ -303,6 +347,7 @@ class DeviceToolsConfigFlow(ConfigFlow, domain=DOMAIN):
                     "device_name": user_input[CONF_DEVICE_NAME],
                     "attribute_modification": None,
                     "entity_modification": None,
+                    "merge_modification": None,
                 }
             )
 
@@ -395,6 +440,8 @@ class OptionsFlowHandler(OptionsFlow):
                 return await self.async_step_attributes()
             case ModificationType.ENTITIES:
                 return await self.async_step_entities()
+            case ModificationType.MERGE:
+                return await self.async_step_merge()
 
     async def async_step_attributes(
         self, user_input: dict[str, Any] | None = None
@@ -477,7 +524,6 @@ class OptionsFlowHandler(OptionsFlow):
             }
         )
 
-        # check if other entries contain any of the now configured entity ids and if so then remove them from the other entries
         config_entries: list[ConfigEntry] = self.hass.config_entries.async_entries(
             DOMAIN
         )
@@ -519,6 +565,79 @@ class OptionsFlowHandler(OptionsFlow):
                     }
                 ),
             )
+
+        return self.async_create_entry(
+            title="",
+            data=DeviceToolsConfigEntryData(
+                {
+                    "device_modification": self.device_modification,
+                }
+            ),
+        )
+
+    async def async_step_merge(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Handle the merge step."""
+
+        if self.device_modification["merge_modification"] is None:
+            self.device_modification["merge_modification"] = MergeModification(
+                {
+                    "devices": set(),
+                }
+            )
+
+        if TYPE_CHECKING:
+            assert self.device_modification["merge_modification"] is not None
+
+        if self.device_modification["device_id"] is None:
+            return self.async_abort(reason="device_not_found")
+
+        if user_input is None:
+            return self.async_show_form(
+                step_id="merge",
+                data_schema=_schema_merge(
+                    self.hass,
+                    self.device_modification["device_id"],
+                    self.device_modification["merge_modification"],
+                ),
+            )
+
+        config_entries: list[ConfigEntry] = self.hass.config_entries.async_entries(
+            DOMAIN
+        )
+
+        for config_entry in config_entries:
+            if config_entry.entry_id == self.config_entry.entry_id:
+                continue
+
+            own_devices = set(user_input[CONF_DEVICES])
+
+            other_device_modification: DeviceModification = config_entry.data[
+                "device_modification"
+            ]
+
+            if other_device_modification["device_id"] in own_devices:
+                return self.async_abort(reason="device_in_use")
+
+            other_merge_modification: MergeModification | None = (
+                other_device_modification.get("merge_modification")
+            )
+
+            if other_merge_modification is None:
+                continue
+
+            other_devices = set(other_merge_modification["devices"])
+            duplicate_devices = other_devices & own_devices
+
+            if len(duplicate_devices) > 0:
+                return self.async_abort(reason="device_already_merged")
+
+        self.device_modification["merge_modification"] = MergeModification(
+            {
+                "devices": user_input[CONF_DEVICES],
+            }
+        )
 
         return self.async_create_entry(
             title="",

@@ -21,6 +21,7 @@ CONF_SERIAL_NUMBER = "serial_number"
 CONF_IDENTIFIERS = "identifiers"
 CONF_ENTITIES = "entities"
 CONF_DEVICE_NAME = "device_name"
+CONF_DEVICES = "devices"
 
 
 class ModificationType(StrEnum):
@@ -28,3 +29,4 @@ class ModificationType(StrEnum):
 
     ATTRIBUTES = "attributes"
     ENTITIES = "entities"
+    MERGE = "merge"
