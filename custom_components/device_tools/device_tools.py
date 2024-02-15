@@ -5,7 +5,6 @@ from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import (
     DeviceEntry,
-    DeviceEntryDisabler,
 )
 from homeassistant.helpers.device_registry import (
     async_get as async_get_device_registry,
@@ -200,7 +199,3 @@ class DeviceTools:
                     device.id,
                     add_config_entry_id=source_config_entry,
                 )
-
-            self._device_registry.async_update_device(
-                source_device.id, disabled_by=DeviceEntryDisabler.INTEGRATION
-            )
