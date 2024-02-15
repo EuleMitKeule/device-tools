@@ -63,7 +63,18 @@ class DeviceTools:
             return
 
         for entry_id, device_modification in self._device_modifications.items():
-            device = self._device_registry.async_get(device_modification["device_id"])
+            device_id = device_modification["device_id"]
+            device: DeviceEntry | None = None
+
+            if device_id is None:
+                device = self._device_registry.async_get_or_create(
+                    config_entry_id=entry_id,
+                    name=device_modification["device_name"],
+                    identifiers={(DOMAIN, entry_id)},
+                )
+                device_modification["device_id"] = device.id
+            else:
+                device = self._device_registry.async_get(device_id)
 
             if device is None:
                 self._logger.error(
@@ -93,14 +104,21 @@ class DeviceTools:
     ) -> None:
         """Apply attribute modification to a device."""
 
+        manufacturer: str | None = attribute_modification.get("manufacturer")
+        model: str | None = attribute_modification.get("model")
+        sw_version: str | None = attribute_modification.get("sw_version")
+        hw_version: str | None = attribute_modification.get("hw_version")
+        serial_number: str | None = attribute_modification.get("serial_number")
+        via_device_id: str | None = attribute_modification.get("via_device_id")
+
         self._device_registry.async_update_device(
             device.id,
-            manufacturer=attribute_modification["manufacturer"],
-            model=attribute_modification["model"],
-            sw_version=attribute_modification["sw_version"],
-            hw_version=attribute_modification["hw_version"],
-            serial_number=attribute_modification["serial_number"],
-            via_device_id=attribute_modification["via_device_id"],
+            manufacturer=manufacturer,
+            model=model,
+            sw_version=sw_version,
+            hw_version=hw_version,
+            serial_number=serial_number,
+            via_device_id=via_device_id,
         )
 
         self._device_registry.async_update_device(device.id)
