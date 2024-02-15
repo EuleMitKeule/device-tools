@@ -63,6 +63,11 @@ def _schema_attributes(
 
     dr = async_get_device_registry(hass)
 
+    config_entries = hass.config_entries.async_entries(DOMAIN)
+    device_ids: set[str] = {
+        entry.data["device_modification"]["device_id"] for entry in config_entries
+    }
+
     return vol.Schema(
         {
             vol.Optional(
@@ -90,6 +95,7 @@ def _schema_attributes(
                             }
                         )
                         for device in dr.devices.values()
+                        if device.id not in device_ids and device.disabled_by is None
                     ],
                     mode=SelectSelectorMode.DROPDOWN,
                 )
@@ -274,6 +280,7 @@ class DeviceToolsConfigFlow(ConfigFlow, domain=DOMAIN):
                                     )
                                     for device in self.device_registry.devices.values()
                                     if device.id not in other_device_ids
+                                    and device.disabled_by is None
                                 ],
                                 mode=SelectSelectorMode.DROPDOWN,
                             )
