@@ -5,16 +5,25 @@ from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import (
     DeviceEntry,
+    DeviceEntryDisabler,
 )
 from homeassistant.helpers.device_registry import (
     async_get as async_get_device_registry,
+)
+from homeassistant.helpers.entity_registry import (
+    async_entries_for_device,
 )
 from homeassistant.helpers.entity_registry import (
     async_get as async_get_entity_registry,
 )
 
 from .const import DOMAIN, SCAN_INTERVAL
-from .models import AttributeModification, DeviceModification, EntityModification
+from .models import (
+    AttributeModification,
+    DeviceModification,
+    EntityModification,
+    MergeModification,
+)
 
 
 class DeviceTools:
@@ -94,6 +103,11 @@ class DeviceTools:
                     device, device_modification["entity_modification"]
                 )
 
+            if device_modification["merge_modification"] is not None:
+                await self._async_apply_merge_modification(
+                    device, device_modification["merge_modification"]
+                )
+
             self._device_registry.async_update_device(
                 device.id,
                 add_config_entry_id=entry_id,
@@ -147,4 +161,46 @@ class DeviceTools:
 
             self._entity_registry.async_update_entity(
                 entity.entity_id, device_id=device.id
+            )
+
+    async def _async_apply_merge_modification(
+        self, device: DeviceEntry, merge_modification: MergeModification
+    ) -> None:
+        """Apply merge modification to a device."""
+
+        devices: list[DeviceEntry | None] = [
+            self._device_registry.async_get(device_id)
+            for device_id in merge_modification["devices"]
+        ]
+
+        for source_device in devices:
+            if source_device is None:
+                self._logger.error(
+                    "[%s] Device not found (id: %s)",
+                    device.name,
+                    merge_modification["devices"],
+                )
+                continue
+
+            entities = async_entries_for_device(
+                self._entity_registry,
+                source_device.id,
+                include_disabled_entities=True,
+            )
+
+            for entity in entities:
+                self._entity_registry.async_update_entity(
+                    entity.entity_id, device_id=device.id
+                )
+
+            source_config_entries = source_device.config_entries
+
+            for source_config_entry in source_config_entries:
+                self._device_registry.async_update_device(
+                    device.id,
+                    add_config_entry_id=source_config_entry,
+                )
+
+            self._device_registry.async_update_device(
+                source_device.id, disabled_by=DeviceEntryDisabler.INTEGRATION
             )
