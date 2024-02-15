@@ -11,26 +11,13 @@
                 "title": "Add new modification",
                 "data": {
                     "modification_name": "Name of the modification",
-                    "modification_type": "Type of the modification"
+                    "device_id": "Device (leave empty to create new device)"
                 }
             },
-            "attributes": {
-                "title": "Configure device attributes",
+            "device": {
+                "title": "Create new device",
                 "data": {
-                    "device_id": "Device",
-                    "manufacturer": "Manufacturer",
-                    "model": "Model",
-                    "via_device_id": "Via device ID",
-                    "sw_version": "Software version",
-                    "hw_version": "Hardware version",
-                    "serial_number": "Serial number"
-                }
-            },
-            "entities": {
-                "title": "Configure device entities",
-                "data": {
-                    "device_id": "Device",
-                    "entities": "Entities"
+                    "device_name": "Device Name"
                 }
             }
         }

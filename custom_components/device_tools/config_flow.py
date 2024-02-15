@@ -6,13 +6,20 @@ from homeassistant.config_entries import ConfigEntry, ConfigFlow, OptionsFlow
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.exceptions import HomeAssistantError
-from homeassistant.helpers.device_registry import DeviceEntry, DeviceRegistry
-from homeassistant.helpers.device_registry import async_get as async_get_device_registry
+from homeassistant.helpers.device_registry import (
+    DeviceEntry,
+    DeviceRegistry,
+)
+from homeassistant.helpers.device_registry import (
+    async_get as async_get_device_registry,
+)
 from homeassistant.helpers.entity_registry import (
     EntityRegistry,
     async_entries_for_device,
 )
-from homeassistant.helpers.entity_registry import async_get as async_get_entity_registry
+from homeassistant.helpers.entity_registry import (
+    async_get as async_get_entity_registry,
+)
 from homeassistant.helpers.selector import (
     ConstantSelector,
     ConstantSelectorConfig,
@@ -24,6 +31,7 @@ from homeassistant.helpers.selector import (
 
 from .const import (
     CONF_DEVICE_ID,
+    CONF_DEVICE_NAME,
     CONF_ENTITIES,
     CONF_HW_VERSION,
     CONF_MANUFACTURER,
@@ -46,26 +54,57 @@ from .models import (
 _LOGGER = logging.getLogger(__name__)
 
 
-def _schema_attributes(attribute_modification: AttributeModification) -> vol.Schema:
+def _schema_attributes(
+    hass: HomeAssistant, attribute_modification: AttributeModification
+) -> vol.Schema:
     """Return the attributes schema."""
+
+    dr = async_get_device_registry(hass)
 
     return vol.Schema(
         {
             vol.Optional(
-                CONF_MANUFACTURER, default=attribute_modification["manufacturer"]
-            ): str,
-            vol.Optional(CONF_MODEL, default=attribute_modification["model"]): str,
-            vol.Optional(
-                CONF_VIA_DEVICE, default=attribute_modification["via_device_id"]
+                CONF_MANUFACTURER,
+                description={"suggested_value": attribute_modification["manufacturer"]},
             ): str,
             vol.Optional(
-                CONF_SW_VERSION, default=attribute_modification["sw_version"]
+                CONF_MODEL,
+                description={"suggested_value": attribute_modification["model"]},
             ): str,
             vol.Optional(
-                CONF_HW_VERSION, default=attribute_modification["hw_version"]
+                CONF_VIA_DEVICE,
+                description={
+                    "suggested_value": attribute_modification["via_device_id"]
+                },
+            ): SelectSelector(
+                SelectSelectorConfig(
+                    options=[
+                        SelectOptionDict(
+                            {
+                                "value": device.id,
+                                "label": device.name_by_user
+                                or device.name
+                                or device.id,
+                            }
+                        )
+                        for device in dr.devices.values()
+                    ],
+                    mode=SelectSelectorMode.DROPDOWN,
+                )
+            ),
+            vol.Optional(
+                CONF_SW_VERSION,
+                description={"suggested_value": attribute_modification["sw_version"]},
             ): str,
             vol.Optional(
-                CONF_SERIAL_NUMBER, default=attribute_modification["serial_number"]
+                CONF_HW_VERSION,
+                description={"suggested_value": attribute_modification["hw_version"]},
+            ): str,
+            vol.Optional(
+                CONF_SERIAL_NUMBER,
+                description={
+                    "suggested_value": attribute_modification["serial_number"]
+                },
             ): str,
         }
     )
@@ -110,9 +149,7 @@ class DeviceToolsConfigFlow(ConfigFlow, domain=DOMAIN):
         """Initialize the config flow."""
 
         self._user_input_user: dict[str, Any] | None = None
-        self._user_input_main: dict[str, Any] | None = None
-        self._device_modification: DeviceModification | None = None
-        self._device: DeviceEntry | None = None
+        self._user_input_device: dict[str, Any] | None = None
 
     @property
     def device_registry(self) -> DeviceRegistry:
@@ -125,39 +162,6 @@ class DeviceToolsConfigFlow(ConfigFlow, domain=DOMAIN):
         """Return the entity registry."""
 
         return async_get_entity_registry(self.hass)
-
-    @property
-    def device(self) -> DeviceEntry:
-        """Return the device."""
-
-        if TYPE_CHECKING:
-            assert self._device is not None
-
-        return self._device
-
-    @device.setter
-    def device(self, value: DeviceEntry) -> None:
-        """Set the device."""
-
-        if TYPE_CHECKING:
-            assert value is not None
-
-        self._device = value
-
-    @property
-    def device_modification(self) -> DeviceModification:
-        """Return the device modification."""
-
-        if TYPE_CHECKING:
-            assert self._device_modification is not None
-
-        return self._device_modification
-
-    @device_modification.setter
-    def device_modification(self, value: DeviceModification) -> None:
-        """Set the device modification."""
-
-        self._device_modification = value
 
     @property
     def user_input_user(self) -> dict[str, Any]:
@@ -173,6 +177,21 @@ class DeviceToolsConfigFlow(ConfigFlow, domain=DOMAIN):
         """Set the user input user."""
 
         self._user_input_user = value
+
+    @property
+    def user_input_device(self) -> dict[str, Any]:
+        """Return the  input device."""
+
+        if TYPE_CHECKING:
+            assert self._user_input_device is not None
+
+        return self._user_input_device
+
+    @user_input_device.setter
+    def user_input_device(self, value: dict[str, Any]) -> None:
+        """Set the user input device."""
+
+        self._user_input_device = value
 
     @property
     def user_input_main(self) -> dict[str, Any]:
@@ -200,12 +219,7 @@ class DeviceToolsConfigFlow(ConfigFlow, domain=DOMAIN):
                 data_schema=vol.Schema(
                     {
                         vol.Required(CONF_MODIFICATION_NAME): str,
-                        vol.Required(
-                            CONF_MODIFICATION_TYPE, default=ModificationType.ATTRIBUTES
-                        ): vol.In(
-                            [value for value in ModificationType.__members__.values()]
-                        ),
-                        vol.Required(CONF_DEVICE_ID): SelectSelector(
+                        vol.Optional(CONF_DEVICE_ID): SelectSelector(
                             SelectSelectorConfig(
                                 options=[
                                     SelectOptionDict(
@@ -227,130 +241,76 @@ class DeviceToolsConfigFlow(ConfigFlow, domain=DOMAIN):
 
         self._user_input_user = user_input
 
-        modification_type: ModificationType = user_input[CONF_MODIFICATION_TYPE]
-        modification_name: str = user_input[CONF_MODIFICATION_NAME]
-        device = self.device_registry.async_get(user_input[CONF_DEVICE_ID])
-
-        if device is None:
-            return self.async_abort(reason="device_not_found")
-
-        if device.disabled_by is not None:
-            return self.async_abort(reason="device_disabled")
-
-        self.device = device
-        self.device_modification = DeviceModification(
-            {
-                "modification_name": modification_name,
-                "device_id": user_input[CONF_DEVICE_ID],
-                "device_name": self.device.name_by_user
-                or self.device.name
-                or self.device.id,
-                "attribute_modification": None,
-                "entity_modification": None,
-            }
-        )
-
-        await self.async_set_unique_id(user_input[CONF_DEVICE_ID])
+        await self.async_set_unique_id(user_input[CONF_MODIFICATION_NAME])
         self._abort_if_unique_id_configured(updates=user_input)
 
-        match modification_type:
-            case ModificationType.ATTRIBUTES:
-                return await self.async_step_attributes()
-            case ModificationType.ENTITIES:
-                return await self.async_step_entities()
+        return await self.async_step_device()
 
-    async def async_step_attributes(
+    async def async_step_device(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        """Handle the attributes step."""
+        """Handle the device step."""
 
-        if self.device_modification["attribute_modification"] is None:
-            self.device_modification["attribute_modification"] = AttributeModification(
-                {
-                    "manufacturer": self.device.manufacturer or "",
-                    "model": self.device.model or "",
-                    "sw_version": self.device.sw_version or "",
-                    "hw_version": self.device.hw_version or "",
-                    "serial_number": self.device.serial_number or "",
-                    "via_device_id": self.device.via_device_id or "",
-                }
-            )
+        device_id: str | None = self.user_input_user.get(CONF_DEVICE_ID)
+        modification_name: str = self.user_input_user[CONF_MODIFICATION_NAME]
 
-        if TYPE_CHECKING:
-            assert self.device_modification["attribute_modification"] is not None
-
-        if user_input is None:
+        if user_input is None and device_id is None:
             return self.async_show_form(
-                step_id="attributes",
-                data_schema=_schema_attributes(
-                    self.device_modification["attribute_modification"]
+                step_id="device",
+                data_schema=vol.Schema(
+                    {
+                        vol.Required(CONF_DEVICE_NAME): str,
+                    }
                 ),
             )
-
-        self.device_modification["attribute_modification"]["manufacturer"] = user_input[
-            CONF_MANUFACTURER
-        ]
-        self.device_modification["attribute_modification"]["model"] = user_input[
-            CONF_MODEL
-        ]
-        self.device_modification["attribute_modification"]["sw_version"] = user_input[
-            CONF_SW_VERSION
-        ]
-        self.device_modification["attribute_modification"]["hw_version"] = user_input[
-            CONF_HW_VERSION
-        ]
-        self.device_modification["attribute_modification"][
-            "serial_number"
-        ] = user_input[CONF_SERIAL_NUMBER]
-        self.device_modification["attribute_modification"][
-            "via_device_id"
-        ] = user_input[CONF_VIA_DEVICE]
-
-        return self.async_create_entry(
-            title=self.device_modification["modification_name"],
-            data=DeviceToolsConfigEntryData(
-                {
-                    "device_modification": self.device_modification,
-                }
-            ),
-        )
-
-    async def async_step_entities(
-        self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
-        """Handle the entities step."""
-
-        entities = async_entries_for_device(self.entity_registry, self.device.id)
-        entity_ids = {entity.id for entity in entities}
-
-        if self.device_modification["entity_modification"] is None:
-            self.device_modification["entity_modification"] = EntityModification(
-                {
-                    "entities": entity_ids,
-                }
-            )
-
-        if TYPE_CHECKING:
-            assert self.device_modification["entity_modification"] is not None
-
-        if user_input is None:
-            return self.async_show_form(
-                step_id="entities",
-                data_schema=_schema_entities(
-                    self.hass,
-                    entity_modification=self.device_modification["entity_modification"],
+        elif device_id is not None:
+            other_entries: list[ConfigEntry] = self._async_current_entries()
+            entry_with_same_device: ConfigEntry | None = next(
+                (
+                    entry
+                    for entry in other_entries
+                    if entry.data["device_modification"]["device_id"] == device_id
+                    and device_id is not None
                 ),
+                None,
             )
 
-        self.device_modification["entity_modification"]["entities"] = user_input[
-            CONF_ENTITIES
-        ]
+            if entry_with_same_device is not None:
+                return self.async_abort(reason="already_configured")
+
+            device = self.device_registry.async_get(device_id)
+
+            if device is None:
+                return self.async_abort(reason="device_not_found")
+
+            if device.disabled_by is not None:
+                return self.async_abort(reason="device_disabled")
+
+            device_modification = DeviceModification(
+                {
+                    "modification_name": modification_name,
+                    "device_id": device.id,
+                    "device_name": device.name_by_user or device.name or device.id,
+                    "attribute_modification": None,
+                    "entity_modification": None,
+                }
+            )
+        elif user_input is not None:
+            device_modification = DeviceModification(
+                {
+                    "modification_name": modification_name,
+                    "device_id": None,
+                    "device_name": user_input[CONF_DEVICE_NAME],
+                    "attribute_modification": None,
+                    "entity_modification": None,
+                }
+            )
 
         return self.async_create_entry(
-            title=self.device_modification["modification_name"],
+            title=device_modification["modification_name"],
             data=DeviceToolsConfigEntryData(
                 {
-                    "device_modification": self.device_modification,
+                    "device_modification": device_modification,
                 }
             ),
         )
@@ -389,7 +349,12 @@ class OptionsFlowHandler(OptionsFlow):
     def device(self) -> DeviceEntry:
         """Return the device."""
 
-        device = self.device_registry.async_get(self.device_modification["device_id"])
+        device_id: str | None = self.device_modification["device_id"]
+
+        if device_id is None:
+            raise HomeAssistantError("device_not_found")
+
+        device = self.device_registry.async_get(device_id)
 
         if device is None:
             raise HomeAssistantError("device_not_found")
@@ -439,12 +404,12 @@ class OptionsFlowHandler(OptionsFlow):
         if self.device_modification["attribute_modification"] is None:
             self.device_modification["attribute_modification"] = AttributeModification(
                 {
-                    "manufacturer": self.device.manufacturer or "",
-                    "model": self.device.model or "",
-                    "sw_version": self.device.sw_version or "",
-                    "hw_version": self.device.hw_version or "",
-                    "serial_number": self.device.serial_number or "",
-                    "via_device_id": self.device.via_device_id or "",
+                    "manufacturer": self.device.manufacturer,
+                    "model": self.device.model,
+                    "sw_version": self.device.sw_version,
+                    "hw_version": self.device.hw_version,
+                    "serial_number": self.device.serial_number,
+                    "via_device_id": self.device.via_device_id,
                 }
             )
 
@@ -455,18 +420,18 @@ class OptionsFlowHandler(OptionsFlow):
             return self.async_show_form(
                 step_id="attributes",
                 data_schema=_schema_attributes(
-                    self.device_modification["attribute_modification"]
+                    self.hass, self.device_modification["attribute_modification"]
                 ),
             )
 
         self.device_modification["attribute_modification"] = AttributeModification(
             {
-                "manufacturer": user_input[CONF_MANUFACTURER],
-                "model": user_input[CONF_MODEL],
-                "sw_version": user_input[CONF_SW_VERSION],
-                "hw_version": user_input[CONF_HW_VERSION],
-                "serial_number": user_input[CONF_SERIAL_NUMBER],
-                "via_device_id": user_input[CONF_VIA_DEVICE],
+                "manufacturer": user_input.get(CONF_MANUFACTURER),
+                "model": user_input.get(CONF_MODEL),
+                "sw_version": user_input.get(CONF_SW_VERSION),
+                "hw_version": user_input.get(CONF_HW_VERSION),
+                "serial_number": user_input.get(CONF_SERIAL_NUMBER),
+                "via_device_id": user_input.get(CONF_VIA_DEVICE),
             }
         )
 
@@ -511,6 +476,49 @@ class OptionsFlowHandler(OptionsFlow):
                 "entities": user_input[CONF_ENTITIES],
             }
         )
+
+        # check if other entries contain any of the now configured entity ids and if so then remove them from the other entries
+        config_entries: list[ConfigEntry] = self.hass.config_entries.async_entries(
+            DOMAIN
+        )
+        for config_entry in config_entries:
+            if config_entry.entry_id == self.config_entry.entry_id:
+                continue
+
+            other_device_modification: DeviceModification = config_entry.data[
+                "device_modification"
+            ]
+
+            other_entity_modification: EntityModification | None = (
+                other_device_modification.get("entity_modification")
+            )
+
+            if other_entity_modification is None:
+                continue
+
+            other_entities = set(other_entity_modification["entities"])
+            own_entities = set(user_input[CONF_ENTITIES])
+            duplicate_entities = other_entities & own_entities
+
+            if len(duplicate_entities) == 0:
+                continue
+
+            new_entities = other_entities - duplicate_entities
+
+            other_device_modification["entity_modification"] = EntityModification(
+                {
+                    "entities": new_entities,
+                }
+            )
+
+            self.hass.config_entries.async_update_entry(
+                config_entry,
+                data=DeviceToolsConfigEntryData(
+                    {
+                        "device_modification": other_device_modification,
+                    }
+                ),
+            )
 
         return self.async_create_entry(
             title="",

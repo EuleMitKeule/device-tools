@@ -20,6 +20,7 @@ CONF_HW_VERSION = "hw_version"
 CONF_SERIAL_NUMBER = "serial_number"
 CONF_IDENTIFIERS = "identifiers"
 CONF_ENTITIES = "entities"
+CONF_DEVICE_NAME = "device_name"
 
 
 class ModificationType(StrEnum):
