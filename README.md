@@ -15,7 +15,7 @@ A custom Home Assistant integration that allows you to modify and interact with 
 The integration will allow the user to...
 * [x] Modify static device attributes
 * [x] Assign entities to devices
-* [ ] Create new devices
+* [x] Create new devices
 * [ ] Merge devices
 
 # Installation
