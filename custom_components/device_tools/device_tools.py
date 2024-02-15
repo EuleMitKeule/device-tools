@@ -167,17 +167,17 @@ class DeviceTools:
     ) -> None:
         """Apply merge modification to a device."""
 
-        devices: list[DeviceEntry | None] = [
-            self._device_registry.async_get(device_id)
+        devices: dict[str, DeviceEntry | None] = {
+            device_id: self._device_registry.async_get(device_id)
             for device_id in merge_modification["devices"]
-        ]
+        }
 
-        for source_device in devices:
+        for source_device_id, source_device in devices.items():
             if source_device is None:
                 self._logger.error(
                     "[%s] Device not found (id: %s)",
                     device.name,
-                    merge_modification["devices"],
+                    source_device_id,
                 )
                 continue
 
