@@ -128,7 +128,26 @@ class DeviceTools:
             devices.add(device.id)
             device_modifications.append(device_modification)
 
+            config_entry = self._hass.config_entries.async_get_entry(entry_id)
+
+            if config_entry is None:
+                raise HomeAssistantError(f"Config entry not found (id: {entry_id})")
+
+            self._hass.config_entries.async_update_entry(
+                config_entry,
+                data={
+                    **config_entry.data,
+                    "device_modification": device_modification,
+                },
+            )
+
         await self._async_validate_device_modifications(device_modifications)
+
+        self._device_modifications = {
+            device_modification["device_id"]: device_modification
+            for device_modification in device_modifications
+            if device_modification["device_id"] is not None
+        }
 
     async def _async_validate_device_modifications(
         self, device_modifications: list[DeviceModification]
