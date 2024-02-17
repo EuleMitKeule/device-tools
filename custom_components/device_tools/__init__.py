@@ -27,7 +27,8 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
     """Set up the from a config entry."""
 
     device_tools: DeviceTools = hass.data[DOMAIN]
-    device_tools.async_get_entries()
+    device_tools.async_get_entries(add_entry=config_entry)
+    await device_tools.async_update()
 
     return True
 
@@ -39,12 +40,14 @@ async def update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
 
     device_tools: DeviceTools = hass.data[DOMAIN]
     device_tools.async_get_entries()
+    await device_tools.async_update()
 
 
 async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
     """Handle config entry unload."""
 
     device_tools: DeviceTools = hass.data[DOMAIN]
-    device_tools.async_get_entries()
+    device_tools.async_get_entries(remove_entry=config_entry)
+    await device_tools.async_update()
 
     return True

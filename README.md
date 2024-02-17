@@ -17,7 +17,7 @@ The integration will allow the user to...
 * [x] Assign entities to devices
 * [x] Create new devices
 * [x] Merge devices
-* [ ] Automatically revert any modification on removal
+* [x] Automatically revert any modification on removal
 
 # Installation
 
