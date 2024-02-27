@@ -91,8 +91,8 @@ class DeviceTools:
     async def _async_validate(self) -> None:
         """Validate device modifications."""
 
-        devices: set[str] = set()
-        device_modifications: list[DeviceModification] = []
+        validated_devices: set[str] = set()
+        validated_device_modifications: dict[str, DeviceModification] = {}
 
         for entry_id, device_modification in self._device_modifications.items():
             device_id = device_modification["device_id"]
@@ -117,7 +117,7 @@ class DeviceTools:
                 )
                 continue
 
-            if device_id in devices:
+            if device_id in validated_devices:
                 self._logger.error(
                     "[%s] Device is already a parent device (id: %s)",
                     device_modification["modification_name"],
@@ -125,13 +125,25 @@ class DeviceTools:
                 )
                 continue
 
-            devices.add(device.id)
-            device_modifications.append(device_modification)
+            if entry_id in validated_device_modifications:
+                self._logger.error(
+                    "[%s] Duplicate config entry (id: %s)",
+                    device_modification["modification_name"],
+                    entry_id,
+                )
 
             config_entry = self._hass.config_entries.async_get_entry(entry_id)
 
             if config_entry is None:
-                raise HomeAssistantError(f"Config entry not found (id: {entry_id})")
+                self._logger.error(
+                    "[%s] Config entry not found (id: %s)",
+                    device_modification["modification_name"],
+                    entry_id,
+                )
+                continue
+
+            validated_devices.add(device.id)
+            validated_device_modifications[entry_id] = device_modification
 
             self._hass.config_entries.async_update_entry(
                 config_entry,
@@ -141,29 +153,25 @@ class DeviceTools:
                 },
             )
 
-        await self._async_validate_device_modifications(device_modifications)
+        await self._async_validate_device_modifications(validated_device_modifications)
 
-        self._device_modifications = {
-            device_modification["device_id"]: device_modification
-            for device_modification in device_modifications
-            if device_modification["device_id"] is not None
-        }
+        self._device_modifications = validated_device_modifications
 
     async def _async_validate_device_modifications(
-        self, device_modifications: list[DeviceModification]
+        self, device_modifications: dict[str, DeviceModification]
     ) -> None:
         """Validate device modifications."""
 
         devices: set[str] = {
             device_modification["device_id"]
-            for device_modification in device_modifications
+            for config_entry_id, device_modification in device_modifications.items()
             if device_modification["device_id"] is not None
         }
 
         entities: set[str] = set()
         merged_devices: set[str] = set()
 
-        for device_modification in device_modifications:
+        for device_modification in device_modifications.values():
             if device_modification["entity_modification"] is not None:
                 unknown_entities: list[str] = []
                 duplicate_entities: list[str] = []

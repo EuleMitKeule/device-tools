@@ -136,9 +136,7 @@ def _schema_entities(
                         SelectOptionDict(
                             {
                                 "value": entity.id,
-                                "label": entity.name
-                                if entity.name is not None
-                                else entity.entity_id,
+                                "label": entity.name or entity.entity_id,
                             }
                         )
                         for entity in er.entities.values()
