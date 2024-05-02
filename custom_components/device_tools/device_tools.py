@@ -39,13 +39,13 @@ class DeviceTools:
         self._logger = logger
         self._device_registry = async_get_device_registry(hass)
         self._entity_registry = async_get_entity_registry(hass)
-        self._run_task = hass.async_create_background_task(self.async_run(), DOMAIN)
         self._device_modifications: dict[str, DeviceModification] = {}
         self._previous_device_modifications: dict[str, DeviceModification] = {}
         self._device_tools_data: DeviceToolsData = {
             "original_entity_configs": {},
             "original_device_configs": {},
         }
+        self._run_task = hass.async_create_background_task(self.async_run(), DOMAIN)
 
     @callback
     def async_get_entries(
