@@ -35,7 +35,7 @@
                 "data": {
                     "manufacturer": "Hersteller",
                     "model": "Modell",
-                    "via_device_id": "über die Geräte ID",
+                    "via_device_id": "Übergeordnete Geräte-ID",
                     "sw_version": "Softwareversion",
                     "hw_version": "Hardwareversion",
                     "serial_number": "Seriennummer"
