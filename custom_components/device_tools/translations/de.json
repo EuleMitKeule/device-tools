@@ -1,0 +1,58 @@
+{
+    "config": {
+        "abort": {
+            "already_configured": "das Gerät ist bereits konfiguriert",
+            "device_not_found": "das Gerät konnte nicht gefunden werden",
+            "device_disabled": "das Gerät ist deaktiviert"
+        },
+        "flow_title": "Füge eine neue Modifikation hinzu",
+        "step": {
+            "user": {
+                "title": "Füge eine neue Modifikation hinzu",
+                "data": {
+                    "modification_name": "Name der Modifikation",
+                    "device_id": "Gerät (leer belassen um ein neues Gerät anzulegen)"
+                }
+            },
+            "device": {
+                "title": "neues Gerät erstellen",
+                "data": {
+                    "device_name": "Gerätename"
+                }
+            }
+        }
+    },
+    "options": {
+        "abort": {
+            "device_not_found": "das Gerät konnte nicht gefunden werden",
+            "device_disabled": "das Gerät ist deaktiviert",
+            "device_already_merged": "das Gerät wurde bereits zusammengeführt",
+            "device_in_use": "das Gerät wird bereits durch eine andere Modifikation verwendet"
+        },
+        "step": {
+            "attributes": {
+                "title": "Konfiguriere Geräteattribute",
+                "data": {
+                    "manufacturer": "Hersteller",
+                    "model": "Modell",
+                    "via_device_id": "über die Geräte ID",
+                    "sw_version": "Software Version",
+                    "hw_version": "Hardware Version",
+                    "serial_number": "Seriennummer"
+                }
+            },
+            "entities": {
+                "title": "Konfiguriere Geräte-Entitäten",
+                "data": {
+                    "entities": "Entitäten"
+                }
+            },
+            "merge": {
+                "title": "führe Geräte zusammen",
+                "data": {
+                    "devices": "Geräte zum zusammenführen"
+                }
+            }
+        }
+    }
+}
