@@ -1,0 +1,58 @@
+{
+    "config": {
+        "abort": {
+            "already_configured": "Das Gerät ist bereits konfiguriert.",
+            "device_not_found": "Das Gerät konnte nicht gefunden werden.",
+            "device_disabled": "Das Gerät ist deaktiviert."
+        },
+        "flow_title": "Füge eine neue Modifikation hinzu",
+        "step": {
+            "user": {
+                "title": "Füge eine neue Modifikation hinzu",
+                "data": {
+                    "modification_name": "Name der Modifikation",
+                    "device_id": "Gerät (leer lassen um ein neues Gerät anzulegen)"
+                }
+            },
+            "device": {
+                "title": "Neues Gerät erstellen",
+                "data": {
+                    "device_name": "Gerätename"
+                }
+            }
+        }
+    },
+    "options": {
+        "abort": {
+            "device_not_found": "Das Gerät konnte nicht gefunden werden.",
+            "device_disabled": "Das Gerät ist deaktiviert.",
+            "device_already_merged": "Das Gerät wurde bereits zusammengeführt.",
+            "device_in_use": "Das Gerät wird bereits von einer anderen Modifikation verwendet."
+        },
+        "step": {
+            "attributes": {
+                "title": "Konfiguriere Geräteattribute",
+                "data": {
+                    "manufacturer": "Hersteller",
+                    "model": "Modell",
+                    "via_device_id": "Übergeordnete Geräte-ID",
+                    "sw_version": "Softwareversion",
+                    "hw_version": "Hardwareversion",
+                    "serial_number": "Seriennummer"
+                }
+            },
+            "entities": {
+                "title": "Konfiguriere Entitäten eines Gerätes",
+                "data": {
+                    "entities": "Entitäten"
+                }
+            },
+            "merge": {
+                "title": "Führe Geräte zusammen",
+                "data": {
+                    "devices": "Geräte zum Zusammenführen"
+                }
+            }
+        }
+    }
+}
