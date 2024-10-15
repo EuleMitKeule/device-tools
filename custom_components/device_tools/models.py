@@ -12,6 +12,7 @@ class AttributeModification(TypedDict):
     hw_version: str | None
     serial_number: str | None
     via_device_id: str | None
+    connections: set[tuple[str, str]] | None
 
 
 class EntityModification(TypedDict):
@@ -52,6 +53,7 @@ class OriginalDeviceConfig(TypedDict):
     hw_version: str | None
     serial_number: str | None
     via_device_id: str | None
+    connections: set[tuple[str, str]] | None
     config_entries: set[str]
     config_entries_set_by_device_tools: set[str]
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 import logging
+from email.policy import default
 from typing import TYPE_CHECKING, Any
 
 import voluptuous as vol
@@ -42,6 +43,7 @@ from .const import (
     CONF_MODIFICATION_TYPE,
     CONF_SERIAL_NUMBER,
     CONF_SW_VERSION,
+    CONF_CONNECTIONS,
     CONF_VIA_DEVICE,
     DOMAIN,
     ModificationType,
@@ -115,6 +117,12 @@ def _schema_attributes(
                     "suggested_value": attribute_modification["serial_number"]
                 },
             ): str,
+            vol.Optional(
+                CONF_CONNECTIONS,
+                description={
+                    "suggested_value": attribute_modification["connections"]
+                },
+            ): tuple[str, str],
         }
     )
 
@@ -463,6 +471,7 @@ class OptionsFlowHandler(OptionsFlow):
                     "hw_version": self.device.hw_version,
                     "serial_number": self.device.serial_number,
                     "via_device_id": self.device.via_device_id,
+                    "connections": self.device.connections,
                 }
             )
 
@@ -485,6 +494,7 @@ class OptionsFlowHandler(OptionsFlow):
                 "hw_version": user_input.get(CONF_HW_VERSION),
                 "serial_number": user_input.get(CONF_SERIAL_NUMBER),
                 "via_device_id": user_input.get(CONF_VIA_DEVICE),
+                "connections": user_input.get(CONF_CONNECTIONS),
             }
         )
 
