@@ -15,6 +15,11 @@ on:
 jobs:
   cache:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version:
+          - "3.12"
+          - "3.13"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -22,7 +27,7 @@ jobs:
       - name: Install Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: ${{ matrix.python-version }}
 
       - name: Load cached Poetry installation
         id: cached-poetry
@@ -55,6 +60,11 @@ jobs:
   ruff:
     needs: cache
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version:
+          - "3.12"
+          - "3.13"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -62,7 +72,7 @@ jobs:
       - name: Install Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: ${{ matrix.python-version }}
 
       - name: Load cached Poetry installation
         uses: actions/cache@v4
@@ -82,11 +92,16 @@ jobs:
 
       - name: Run ruff
         run: |
-          poetry run ruff custom_components/device_tools
+          poetry run ruff check custom_components/device_tools
 
   mypy:
     needs: cache
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version:
+          - "3.12"
+          - "3.13"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -94,7 +109,7 @@ jobs:
       - name: Install Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: ${{ matrix.python-version }}
 
       - name: Load cached Poetry installation
         uses: actions/cache@v4
@@ -119,6 +134,11 @@ jobs:
   hacs:
     needs: cache
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version:
+          - "3.12"
+          - "3.13"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -126,7 +146,7 @@ jobs:
       - name: Install Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: ${{ matrix.python-version }}
 
       - name: Load cached Poetry installation
         uses: actions/cache@v4
@@ -152,6 +172,11 @@ jobs:
   hassfest:
     needs: cache
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version:
+          - "3.12"
+          - "3.13"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -159,7 +184,7 @@ jobs:
       - name: Install Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: ${{ matrix.python-version }}
 
       - name: Load cached Poetry installation
         uses: actions/cache@v4
