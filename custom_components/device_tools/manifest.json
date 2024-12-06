@@ -5,6 +5,6 @@
     "config_flow": true,
     "documentation": "https://github.com/eulemitkeule/device-tools",
     "iot_class": "assumed_state",
-    "issue_tracker": "https://github.com/eulemitkeule/device-tools",
+    "issue_tracker": "https://github.com/eulemitkeule/device-tools/issues",
     "version": "0.0.0"
 }
