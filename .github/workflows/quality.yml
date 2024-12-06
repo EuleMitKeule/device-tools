@@ -157,8 +157,8 @@ jobs:
             -Dsonar.organization=${{ env.SONAR_PROJECT_ORGANIZATION }}
             -Dsonar.projectKey=${{ env.SONAR_PROJECT_KEY }}
             -Dsonar.python.coverage.reportPaths=coverage.xml
-            -Dsonar.sources=/github/workspace/custom_components/device_tools
-            -Dsonar.tests=/github/workspace/tests
+            -Dsonar.sources=custom_components/device_tools
+            -Dsonar.tests=tests
             -Dsonar.python.version=${{ matrix.python-version }}
             -Dsonar.text.inclusions=**/*.py
 
