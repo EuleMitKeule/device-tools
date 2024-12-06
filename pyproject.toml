@@ -1,21 +1,64 @@
-[tool.poetry]
+[project]
 name = "device-tools"
-version = "0.0.0"
-description = ""
-authors = ["Lennard Beers <l.beers@outlook.de>"]
+authors = [{ name = "Lennard Beers", email = "l.beers@outlook.de"}]
+maintainers = [{ name = "Lennard Beers", email = "l.beers@outlook.de"}]
+license = {file = "LICENSE.md"}
+keywords = [
+    "homeassistant",
+    "custom-component",
+    "device-tools",
+    "device",
+    "tools",
+    "integration",
+    "home-assistant",
+    "home-assistant-custom-component",
+    "home-assistant-integration",
+    "home-assistant-integration",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Users",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.13",
+]
+description = "A custom component for Home Assistant to create and modify devices."
 readme = "README.md"
+requires-python = ">=3.12"
+version = "0.0.0"
+dependencies = [
+    "homeassistant>=2024.12"
+]
 
-[tool.poetry.dependencies]
-python = ">=3.11, <3.13"
-homeassistant = "^2024.2.1"
+[dependency-groups]
+dev = [
+    "ruff",
+    "mypy",
+    "pytest",
+    "pytest-asyncio",
+    "pytest-cov",
+    "homeassistant-stubs",
+    "voluptuous-stubs",
+]
 
+[project.urls]
+Repository = "https://github.com/eulemitkeule/device-tools"
+Documentation = "https://github.com/eulemitkeule/device-tools/blob/master/README.md"
+Changelog = "https://github.com/EuleMitKeule/device-tools/releases"
+Issues = "https://github.com/eulemitkeule/device-tools/issues"
 
-[tool.poetry.group.dev.dependencies]
-mypy = "^1.8.0"
-ruff = "^0.2.1"
-homeassistant-stubs = "^2024.2.1"
-voluptuous-stubs = "^0.1.1"
+[tool.mypy]
+check_untyped_defs = true
+strict = true
 
-[build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+[tool.pytest.ini_options]
+asyncio_default_fixture_loop_scope = "function"
+
+[tool.ruff.lint]
+select = ["D", "ARG"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.per-file-ignores]
+"!custom_components/device_tools/**.py" = ["D"]
