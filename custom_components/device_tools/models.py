@@ -1,5 +1,6 @@
 """Models for device tools."""
 
+from dataclasses import dataclass, field
 from typing import TypedDict
 
 
@@ -56,14 +57,13 @@ class OriginalDeviceConfig(TypedDict):
     config_entries_set_by_device_tools: set[str]
 
 
-class DeviceToolsConfigEntryData(TypedDict):
-    """Device Tools config entry."""
-
-    device_modification: DeviceModification
-
-
-class DeviceToolsData(TypedDict):
+@dataclass
+class DeviceToolsHistoryData:
     """Device Tools data class."""
 
-    original_entity_configs: dict[str, OriginalEntityConfig]
-    original_device_configs: dict[str, OriginalDeviceConfig]
+    original_entity_configs: dict[str, OriginalEntityConfig] = field(
+        default_factory=dict
+    )
+    original_device_configs: dict[str, OriginalDeviceConfig] = field(
+        default_factory=dict
+    )

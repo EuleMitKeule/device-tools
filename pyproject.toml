@@ -40,6 +40,11 @@ dev = [
     "homeassistant-stubs",
     "voluptuous-stubs",
 ]
+test = [
+    "pytest-asyncio>=0.24.0",
+    "pytest-cov>=6.0.0",
+    "pytest-homeassistant-custom-component>=0.13.190",
+]
 
 [project.urls]
 Repository = "https://github.com/eulemitkeule/device-tools"
@@ -50,6 +55,7 @@ Issues = "https://github.com/eulemitkeule/device-tools/issues"
 [tool.mypy]
 check_untyped_defs = true
 strict = true
+enable_incomplete_feature = "NewGenericSyntax"
 
 [tool.pytest.ini_options]
 asyncio_default_fixture_loop_scope = "function"

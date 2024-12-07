@@ -1,26 +1,18 @@
+"""Config and options flow for the device-tools integration."""
+
 from __future__ import annotations
+
 import logging
+from copy import deepcopy
 from typing import TYPE_CHECKING, Any
 
+import homeassistant.helpers.device_registry as dr
+import homeassistant.helpers.entity_registry as er
 import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry, ConfigFlow, OptionsFlow
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.exceptions import HomeAssistantError
-from homeassistant.helpers.device_registry import (
-    DeviceEntry,
-    DeviceRegistry,
-)
-from homeassistant.helpers.device_registry import (
-    async_get as async_get_device_registry,
-)
-from homeassistant.helpers.entity_registry import (
-    EntityRegistry,
-    async_entries_for_device,
-)
-from homeassistant.helpers.entity_registry import (
-    async_get as async_get_entity_registry,
-)
 from homeassistant.helpers.selector import (
     ConstantSelector,
     ConstantSelectorConfig,
@@ -49,7 +41,6 @@ from .const import (
 from .models import (
     AttributeModification,
     DeviceModification,
-    DeviceToolsConfigEntryData,
     EntityModification,
     MergeModification,
 )
@@ -61,8 +52,7 @@ def _schema_attributes(
     hass: HomeAssistant, attribute_modification: AttributeModification
 ) -> vol.Schema:
     """Return the attributes schema."""
-
-    dr = async_get_device_registry(hass)
+    device_registry = dr.async_get(hass)
 
     config_entries = hass.config_entries.async_entries(DOMAIN)
     device_ids: set[str] = {
@@ -95,7 +85,7 @@ def _schema_attributes(
                                 or device.id,
                             }
                         )
-                        for device in dr.devices.values()
+                        for device in device_registry.devices.values()
                         if device.id not in device_ids and device.disabled_by is None
                     ],
                     mode=SelectSelectorMode.DROPDOWN,
@@ -123,8 +113,7 @@ def _schema_entities(
     hass: HomeAssistant, entity_modification: EntityModification
 ) -> vol.Schema:
     """Return the entities schema."""
-
-    er = async_get_entity_registry(hass)
+    entity_registry = er.async_get(hass)
 
     return vol.Schema(
         {
@@ -140,7 +129,8 @@ def _schema_entities(
                                 "label": entity.name or entity.entity_id,
                             }
                         )
-                        for entity in er.entities.values()
+                        for entity in entity_registry.entities.values()
+                        if entity.id
                     ],
                     mode=SelectSelectorMode.DROPDOWN,
                     multiple=True,
@@ -154,8 +144,7 @@ def _schema_merge(
     hass: HomeAssistant, device_id: str, merge_modification: MergeModification
 ) -> vol.Schema:
     """Return the merge schema."""
-
-    dr = async_get_device_registry(hass)
+    device_registry = dr.async_get(hass)
 
     return vol.Schema(
         {
@@ -173,7 +162,7 @@ def _schema_merge(
                                 or other_device.id,
                             }
                         )
-                        for other_device in dr.devices.values()
+                        for other_device in device_registry.devices.values()
                         if other_device.id != device_id
                     ],
                     mode=SelectSelectorMode.DROPDOWN,
@@ -189,26 +178,22 @@ class DeviceToolsConfigFlow(ConfigFlow, domain=DOMAIN):
 
     def __init__(self) -> None:
         """Initialize the config flow."""
-
         self._user_input_user: dict[str, Any] | None = None
         self._user_input_device: dict[str, Any] | None = None
 
     @property
-    def device_registry(self) -> DeviceRegistry:
+    def device_registry(self) -> dr.DeviceRegistry:
         """Return the device registry."""
-
-        return async_get_device_registry(self.hass)
+        return dr.async_get(self.hass)
 
     @property
-    def entity_registry(self) -> EntityRegistry:
+    def entity_registry(self) -> er.EntityRegistry:
         """Return the entity registry."""
-
-        return async_get_entity_registry(self.hass)
+        return er.async_get(self.hass)
 
     @property
     def user_input_user(self) -> dict[str, Any]:
         """Return the user input user."""
-
         if TYPE_CHECKING:
             assert self._user_input_user is not None
 
@@ -217,13 +202,11 @@ class DeviceToolsConfigFlow(ConfigFlow, domain=DOMAIN):
     @user_input_user.setter
     def user_input_user(self, value: dict[str, Any]) -> None:
         """Set the user input user."""
-
         self._user_input_user = value
 
     @property
     def user_input_device(self) -> dict[str, Any]:
         """Return the  input device."""
-
         if TYPE_CHECKING:
             assert self._user_input_device is not None
 
@@ -232,13 +215,11 @@ class DeviceToolsConfigFlow(ConfigFlow, domain=DOMAIN):
     @user_input_device.setter
     def user_input_device(self, value: dict[str, Any]) -> None:
         """Set the user input device."""
-
         self._user_input_device = value
 
     @property
     def user_input_main(self) -> dict[str, Any]:
         """Return the user input main."""
-
         if TYPE_CHECKING:
             assert self._user_input_main is not None
 
@@ -247,14 +228,12 @@ class DeviceToolsConfigFlow(ConfigFlow, domain=DOMAIN):
     @user_input_main.setter
     def user_input_main(self, value: dict[str, Any]) -> None:
         """Set the user input main."""
-
         self._user_input_main = value
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Handle a flow initialized by the user."""
-
         other_entries = self._async_current_entries()
         other_device_ids: set[str] = {
             entry.data["device_modification"]["device_id"] for entry in other_entries
@@ -277,7 +256,10 @@ class DeviceToolsConfigFlow(ConfigFlow, domain=DOMAIN):
                                             or device.id,
                                         }
                                     )
-                                    for device in sorted(list(self.device_registry.devices.values()),key=lambda x: x.name_by_user or x.name or x.id)
+                                    for device in sorted(
+                                        self.device_registry.devices.values(),
+                                        key=lambda x: x.name_by_user or x.name or x.id,
+                                    )
                                     if device.id not in other_device_ids
                                     and device.disabled_by is None
                                 ],
@@ -299,7 +281,6 @@ class DeviceToolsConfigFlow(ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Handle the device step."""
-
         device_id: str | None = self.user_input_user.get(CONF_DEVICE_ID)
         modification_name: str = self.user_input_user[CONF_MODIFICATION_NAME]
 
@@ -312,7 +293,7 @@ class DeviceToolsConfigFlow(ConfigFlow, domain=DOMAIN):
                     }
                 ),
             )
-        elif device_id is not None:
+        if device_id is not None:
             other_entries: list[ConfigEntry] = self._async_current_entries()
             entry_with_same_device: ConfigEntry | None = next(
                 (
@@ -359,11 +340,9 @@ class DeviceToolsConfigFlow(ConfigFlow, domain=DOMAIN):
 
         return self.async_create_entry(
             title=device_modification["modification_name"],
-            data=DeviceToolsConfigEntryData(
-                {
-                    "device_modification": device_modification,
-                }
-            ),
+            data={
+                "device_modification": device_modification,
+            },
         )
 
     @staticmethod
@@ -376,30 +355,28 @@ class DeviceToolsConfigFlow(ConfigFlow, domain=DOMAIN):
 
 
 class OptionsFlowHandler(OptionsFlow):
+    """Options flow for the device-tools integration."""
+
     def __init__(self, config_entry: ConfigEntry) -> None:
         """Initialize options flow."""
-
         self.config_entry = config_entry
         self.device_modification: DeviceModification = config_entry.data[
             "device_modification"
         ]
 
     @property
-    def device_registry(self) -> DeviceRegistry:
+    def device_registry(self) -> dr.DeviceRegistry:
         """Return the device registry."""
-
-        return async_get_device_registry(self.hass)
+        return dr.async_get(self.hass)
 
     @property
-    def entity_registry(self) -> EntityRegistry:
+    def entity_registry(self) -> er.EntityRegistry:
         """Return the entity registry."""
-
-        return async_get_entity_registry(self.hass)
+        return er.async_get(self.hass)
 
     @property
-    def device(self) -> DeviceEntry:
+    def device(self) -> dr.DeviceEntry:
         """Return the device."""
-
         device_id: str | None = self.device_modification["device_id"]
 
         if device_id is None:
@@ -416,7 +393,6 @@ class OptionsFlowHandler(OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Manage the options."""
-
         if user_input is None:
             return self.async_show_form(
                 step_id="init",
@@ -432,9 +408,7 @@ class OptionsFlowHandler(OptionsFlow):
                         ),
                         vol.Required(
                             CONF_MODIFICATION_TYPE, default=ModificationType.ATTRIBUTES
-                        ): vol.In(
-                            [value for value in ModificationType.__members__.values()]
-                        ),
+                        ): vol.In(list(ModificationType)),
                     }
                 ),
             )
@@ -453,7 +427,6 @@ class OptionsFlowHandler(OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Handle the attributes step."""
-
         if self.device_modification["attribute_modification"] is None:
             self.device_modification["attribute_modification"] = AttributeModification(
                 {
@@ -489,21 +462,15 @@ class OptionsFlowHandler(OptionsFlow):
         )
 
         return self.async_create_entry(
-            title="",
-            data=DeviceToolsConfigEntryData(
-                {
-                    "device_modification": self.device_modification,
-                }
-            ),
+            title="", data={"device_modification": deepcopy(self.device_modification)}
         )
 
     async def async_step_entities(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Handle the entities step."""
-
         if self.device_modification["entity_modification"] is None:
-            entities = async_entries_for_device(self.entity_registry, self.device.id)
+            entities = dr.async_entries_for_device(self.entity_registry, self.device.id)
             entity_ids = {entity.id for entity in entities}
 
             self.device_modification["entity_modification"] = EntityModification(
@@ -565,27 +532,22 @@ class OptionsFlowHandler(OptionsFlow):
 
             self.hass.config_entries.async_update_entry(
                 config_entry,
-                data=DeviceToolsConfigEntryData(
-                    {
-                        "device_modification": other_device_modification,
-                    }
-                ),
+                data={
+                    "device_modification": other_device_modification,
+                },
             )
 
         return self.async_create_entry(
             title="",
-            data=DeviceToolsConfigEntryData(
-                {
-                    "device_modification": self.device_modification,
-                }
-            ),
+            data={
+                "device_modification": self.device_modification,
+            },
         )
 
     async def async_step_merge(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Handle the merge step."""
-
         if self.device_modification["merge_modification"] is None:
             self.device_modification["merge_modification"] = MergeModification(
                 {
@@ -646,10 +608,5 @@ class OptionsFlowHandler(OptionsFlow):
         )
 
         return self.async_create_entry(
-            title="",
-            data=DeviceToolsConfigEntryData(
-                {
-                    "device_modification": self.device_modification,
-                }
-            ),
+            title="", data={"device_modification": self.device_modification}
         )
