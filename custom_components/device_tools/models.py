@@ -1,6 +1,10 @@
 """Models for device tools."""
 
-from typing import TypedDict
+from collections import defaultdict
+from dataclasses import dataclass, field
+from typing import Any, TypedDict
+
+from custom_components.device_tools.const import IGNORED_ATTRIBUTES
 
 
 class AttributeModification(TypedDict):
@@ -56,14 +60,20 @@ class OriginalDeviceConfig(TypedDict):
     config_entries_set_by_device_tools: set[str]
 
 
-class DeviceToolsConfigEntryData(TypedDict):
-    """Device Tools config entry."""
-
-    device_modification: DeviceModification
-
-
-class DeviceToolsData(TypedDict):
+@dataclass
+class DeviceToolsHistoryData:
     """Device Tools data class."""
 
-    original_entity_configs: dict[str, OriginalEntityConfig]
-    original_device_configs: dict[str, OriginalDeviceConfig]
+    device_attribute_history: defaultdict[str, dict[str, Any]] = field(
+        default_factory=lambda: defaultdict(dict)
+    )
+
+    def update_attribute_history(
+        self, device_id: str, attributes: dict[str, Any]
+    ) -> None:
+        """Save device attributes."""
+        for attribute, value in attributes.items():
+            if attribute in IGNORED_ATTRIBUTES:
+                continue
+
+            self.device_attribute_history[device_id][attribute] = value

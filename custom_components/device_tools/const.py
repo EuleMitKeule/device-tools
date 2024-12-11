@@ -1,6 +1,5 @@
 """Constants for the Device Tools integration."""
 
-
 from enum import StrEnum
 
 DOMAIN = "device_tools"
@@ -30,3 +29,14 @@ class ModificationType(StrEnum):
     ATTRIBUTES = "attributes"
     ENTITIES = "entities"
     MERGE = "merge"
+
+
+IGNORED_ATTRIBUTES = [
+    "config_entries",
+    "connections",
+    "created_at",
+    "id",
+    "identifiers",
+    "modified_at",
+    "primary_config_entry",
+]

@@ -34,11 +34,13 @@ dependencies = [
 dev = [
     "ruff",
     "mypy",
-    "pytest",
-    "pytest-asyncio",
-    "pytest-cov",
     "homeassistant-stubs",
     "voluptuous-stubs",
+]
+test = [
+    "pytest-asyncio>=0.24.0",
+    "pytest-cov>=6.0.0",
+    "pytest-homeassistant-custom-component>=0.13.190",
 ]
 
 [project.urls]
@@ -50,8 +52,10 @@ Issues = "https://github.com/eulemitkeule/device-tools/issues"
 [tool.mypy]
 check_untyped_defs = true
 strict = true
+enable_incomplete_feature = "NewGenericSyntax"
 
 [tool.pytest.ini_options]
+asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 
 [tool.ruff.lint]
@@ -61,4 +65,4 @@ select = ["D", "ARG"]
 convention = "google"
 
 [tool.ruff.lint.per-file-ignores]
-"!custom_components/device_tools/**.py" = ["D"]
+"!custom_components/device_tools/**.py" = ["D", "ARG"]
