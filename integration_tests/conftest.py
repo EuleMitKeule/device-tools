@@ -6,6 +6,7 @@ import pytest
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import (
     MockConfigEntry,
     MockEntity,
@@ -13,11 +14,7 @@ from pytest_homeassistant_custom_component.common import (
 )
 
 from custom_components.device_tools.device_listener import DeviceListener
-from custom_components.device_tools.device_modification_registry import (
-    DeviceModificationRegistry,
-)
-from custom_components.device_tools.device_tools import DeviceTools
-from custom_components.device_tools.models import DeviceToolsHistoryData
+from custom_components.device_tools.entity_listener import EntityListener
 from integration_tests.const import DOMAIN
 
 
@@ -113,34 +110,28 @@ def device_listener(hass: HomeAssistant) -> DeviceListener:
 
 
 @pytest.fixture
-def device_tools_history_data() -> DeviceToolsHistoryData:
-    """Create a device_tools_history_data instance."""
+def entity_listener(hass: HomeAssistant) -> EntityListener:
+    """Create a entity_listener instance."""
 
-    device_tools_history_data = DeviceToolsHistoryData()
-    return device_tools_history_data
-
-
-@pytest.fixture
-def device_modification_registry() -> DeviceModificationRegistry:
-    """Create a device_modification_registry instance."""
-
-    device_modification_registry = DeviceModificationRegistry()
-    return device_modification_registry
+    entity_listener = EntityListener(hass)
+    return entity_listener
 
 
 @pytest.fixture
 def mock_device_tools(
-    hass: HomeAssistant,
-    device_tools_history_data: DeviceToolsHistoryData,
-    device_modification_registry: DeviceModificationRegistry,
     device_listener: DeviceListener,
-) -> DeviceTools:
+    entity_listener: EntityListener,
+    device_registry: dr.DeviceRegistry,
+    entity_registry: er.EntityRegistry,
+) -> None:
     """Create a device_tools instance."""
 
-    device_tools = DeviceTools(
-        hass=hass,
-        device_tools_history_data=device_tools_history_data,
-        device_modification_registry=device_modification_registry,
-        device_listener=device_listener,
-    )
-    return device_tools
+    # device_tools = DeviceTools(
+    #     device_tools_history_data=device_tools_history_data,
+    #     device_modification_registry=device_modification_registry,
+    #     device_listener=device_listener,
+    #     entity_listener=entity_listener,
+    #     device_registry=device_registry,
+    #     entity_registry=entity_registry,
+    # )
+    # return device_tools

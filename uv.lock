@@ -643,13 +643,11 @@ dependencies = [
 dev = [
     { name = "homeassistant-stubs" },
     { name = "mypy" },
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
-    { name = "pytest-cov" },
     { name = "ruff" },
     { name = "voluptuous-stubs" },
 ]
 test = [
+    { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "pytest-cov" },
     { name = "pytest-homeassistant-custom-component" },
@@ -662,13 +660,11 @@ requires-dist = [{ name = "homeassistant", specifier = ">=2024.12" }]
 dev = [
     { name = "homeassistant-stubs" },
     { name = "mypy" },
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
-    { name = "pytest-cov" },
     { name = "ruff" },
     { name = "voluptuous-stubs" },
 ]
 test = [
+    { name = "pytest", specifier = ">=8.3.3" },
     { name = "pytest-asyncio", specifier = ">=0.24.0" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
     { name = "pytest-homeassistant-custom-component", specifier = ">=0.13.190" },
