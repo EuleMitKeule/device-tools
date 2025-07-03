@@ -24,6 +24,20 @@ class ModificationType(StrEnum):
     ENTITY = "entity"
 
 
+MODIFIABLE_ATTRIBUTES = {
+    ModificationType.DEVICE: [
+        CONF_MANUFACTURER,
+        CONF_MODEL,
+        CONF_SW_VERSION,
+        CONF_HW_VERSION,
+        CONF_SERIAL_NUMBER,
+        CONF_VIA_DEVICE_ID,
+    ],
+    ModificationType.ENTITY: [
+        CONF_DEVICE_ID,
+    ],
+}
+
 IGNORED_ATTRIBUTES = [
     "config_entries",
     "connections",

@@ -6,9 +6,7 @@ import logging
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import (
-    config_validation as cv,
-)
+from homeassistant.helpers import config_validation as cv
 
 from .const import (
     CONF_MODIFICATION_ENTRY_ID,
@@ -21,7 +19,6 @@ from .device_listener import DeviceListener
 from .device_modification import DeviceModification
 from .entity_listener import EntityListener
 from .entity_modification import EntityModification
-from .storage import Storage
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 _LOGGER = logging.getLogger(__name__)
@@ -31,12 +28,9 @@ async def async_setup(hass: HomeAssistant, _config: dict) -> bool:
     """Set up the device tools component."""
     _LOGGER.debug("Setting up Device Tools")
 
-    storage = Storage(hass)
-    await storage.async_load()
     hass.data[DATA_KEY] = DeviceToolsData(
         device_listener=DeviceListener(hass),
         entity_listener=EntityListener(hass),
-        storage=storage,
     )
     return True
 
@@ -44,6 +38,8 @@ async def async_setup(hass: HomeAssistant, _config: dict) -> bool:
 async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
     """Set up the config entry."""
     _LOGGER.debug("Setting up Device Tools config entry %s", config_entry.entry_id)
+    _LOGGER.debug("Config entry data: %s", config_entry.data)
+    _LOGGER.debug("Config entry options: %s", config_entry.options)
 
     device_tools_data: DeviceToolsData = hass.data[DATA_KEY]
 
@@ -54,16 +50,14 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
         case ModificationType.DEVICE:
             modification = DeviceModification(
                 hass,
-                device_tools_data.device_listener,
-                device_tools_data.storage,
                 config_entry,
+                device_tools_data.device_listener,
             )
         case ModificationType.ENTITY:
             modification = EntityModification(
                 hass,
-                device_tools_data.entity_listener,
-                device_tools_data.storage,
                 config_entry,
+                device_tools_data.entity_listener,
             )
 
     device_tools_data.modifications[modification_entry_id] = modification
@@ -78,18 +72,12 @@ async def update_listener(hass: HomeAssistant, config_entry: ConfigEntry) -> Non
     """Handle options update."""
     _LOGGER.debug("Updating Device Tools config entry %s", config_entry.entry_id)
 
-    if config_entry.disabled_by:
-        await async_handle_disabled_or_removed(hass, config_entry)
-    else:
-        await hass.config_entries.async_reload(config_entry.entry_id)
+    await hass.config_entries.async_reload(config_entry.entry_id)
 
 
 async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
     """Handle config entry unload."""
     _LOGGER.debug("Unloading Device Tools config entry %s", config_entry.entry_id)
-
-    if config_entry.disabled_by:
-        await async_handle_disabled_or_removed(hass, config_entry)
 
     device_tools_data: DeviceToolsData = hass.data[DATA_KEY]
 
@@ -100,24 +88,6 @@ async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> 
         await modification.revert()
 
     return True
-
-
-async def async_remove_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> None:
-    """Handle config entry removal."""
-    _LOGGER.debug("Removing Device Tools config entry %s", config_entry.entry_id)
-
-    await async_handle_disabled_or_removed(hass, config_entry)
-
-
-async def async_handle_disabled_or_removed(
-    hass: HomeAssistant, config_entry: ConfigEntry
-) -> None:
-    """Handle disabled or removed config entry."""
-    device_tools_data: DeviceToolsData = hass.data[DATA_KEY]
-
-    modification_entry_id: str = config_entry.data[CONF_MODIFICATION_ENTRY_ID]
-
-    device_tools_data.storage.remove_entry_data(modification_entry_id)
 
 
 # async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:

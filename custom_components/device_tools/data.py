@@ -8,7 +8,6 @@ from .const import DOMAIN
 from .device_listener import DeviceListener
 from .entity_listener import EntityListener
 from .modification import Modification
-from .storage import Storage
 
 
 @dataclass(slots=True)
@@ -17,7 +16,6 @@ class DeviceToolsData:
 
     device_listener: DeviceListener
     entity_listener: EntityListener
-    storage: Storage
     modifications: dict[str, Modification] = field(default_factory=dict)
 
 
