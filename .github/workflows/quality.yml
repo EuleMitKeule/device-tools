@@ -10,139 +10,180 @@ on:
   push:
     branches:
       - master
-      - develop
+
+env:
+  SONAR_PROJECT_KEY: EuleMitKeule_device-tools
+  SONAR_PROJECT_ORGANIZATION: eule
 
 jobs:
   cache:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version:
+          - "3.12"
+          - "3.13"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Python
-        uses: actions/setup-python@v5
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
         with:
-          python-version: "3.11"
+          python-version: ${{ matrix.python-version }}
+          enable-cache: true
+          cache-suffix: uv-${{ runner.os }}-${{ matrix.python-version }}
 
-      - name: Load cached Poetry installation
-        id: cached-poetry
-        uses: actions/cache@v4
-        with:
-          path: ~/.local
-          key: poetry-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
-
-      - name: Install Poetry
-        if: steps.cached-poetry.outputs.cache-hit != 'true'
-        uses: snok/install-poetry@v1
-        with:
-          virtualenvs-create: true
-          virtualenvs-in-project: true
-
-      - name: Load cached Poetry venv
-        id: cached-poetry-venv
-        uses: actions/cache@v4
-        with:
-          path: .venv
-          key: poetry-venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
-
-      - name: Install dependencies
-        if: steps.cached-poetry-venv.outputs.cache-hit != 'true'
-        run: poetry install --no-interaction --no-root
-
-      - name: Install package
-        run: poetry install --no-interaction
+      - name: Install dependecies
+        run: uv sync --all-groups
 
   ruff:
     needs: cache
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version:
+          - "3.12"
+          - "3.13"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Python
-        uses: actions/setup-python@v5
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
         with:
-          python-version: "3.11"
+          python-version: ${{ matrix.python-version }}
+          enable-cache: true
+          cache-suffix: uv-${{ runner.os }}-${{ matrix.python-version }}
 
-      - name: Load cached Poetry installation
-        uses: actions/cache@v4
-        with:
-          path: ~/.local
-          key: poetry-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
-
-      - name: Load cached Poetry venv
-        uses: actions/cache@v4
-        with:
-          path: ~/.venv
-          key: poetry-venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
-
-      - name: Install package
-        run: |
-          poetry install --no-interaction
+      - name: Install dependecies
+        run: uv sync --all-groups
 
       - name: Run ruff
         run: |
-          poetry run ruff custom_components/device_tools
+          uv run ruff check .
 
   mypy:
     needs: cache
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version:
+          - "3.12"
+          - "3.13"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Python
-        uses: actions/setup-python@v5
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
         with:
-          python-version: "3.11"
+          python-version: ${{ matrix.python-version }}
+          enable-cache: true
+          cache-suffix: uv-${{ runner.os }}-${{ matrix.python-version }}
 
-      - name: Load cached Poetry installation
-        uses: actions/cache@v4
-        with:
-          path: ~/.local
-          key: poetry-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
-
-      - name: Load cached Poetry venv
-        uses: actions/cache@v4
-        with:
-          path: ~/.venv
-          key: poetry-venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
-
-      - name: Install package
-        run: |
-          poetry install --no-interaction
+      - name: Install dependecies
+        run: uv sync --all-groups
 
       - name: Run mypy
         run: |
-          poetry run mypy custom_components/device_tools
+          uv run mypy --strict .
+
+  tests:
+    needs: cache
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version:
+          - "3.12"
+          - "3.13"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+          enable-cache: true
+          cache-suffix: uv-${{ runner.os }}-${{ matrix.python-version }}
+
+      - name: Install dependecies
+        run: uv sync --all-groups
+
+      - name: Run tests
+        run: |
+          uv run pytest --cov=. --cov-report=term tests
+
+  sonar:
+    needs: cache
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version:
+          - "3.12"
+          - "3.13"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+          enable-cache: true
+          cache-suffix: uv-${{ runner.os }}-${{ matrix.python-version }}
+
+      - name: Install dependecies
+        run: uv sync --all-groups
+
+      - name: Run tests
+        run: |
+          uv run pytest --cov=. --cov-report=xml --cov-report=term tests
+
+      - name: fix code coverage paths
+        run: |
+          sed -i 's|/home/runner/work/device-tools/device-tools|/github/workspace|g' coverage.xml
+
+      - name: Run SonarCloud analysis
+        uses: sonarsource/sonarcloud-github-action@master
+        env:
+          GITHUB_TOKEN: ${{ secrets.PAT }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          args: >
+            -Dsonar.organization=${{ env.SONAR_PROJECT_ORGANIZATION }}
+            -Dsonar.projectKey=${{ env.SONAR_PROJECT_KEY }}
+            -Dsonar.python.coverage.reportPaths=coverage.xml
+            -Dsonar.sources=custom_components/device_tools
+            -Dsonar.tests=tests
+            -Dsonar.python.version=${{ matrix.python-version }}
+            -Dsonar.text.inclusions=**/*.py
+
 
   hacs:
     needs: cache
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version:
+          - "3.12"
+          - "3.13"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Python
-        uses: actions/setup-python@v5
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
         with:
-          python-version: "3.11"
+          python-version: ${{ matrix.python-version }}
+          enable-cache: true
+          cache-suffix: uv-${{ runner.os }}-${{ matrix.python-version }}
 
-      - name: Load cached Poetry installation
-        uses: actions/cache@v4
-        with:
-          path: ~/.local
-          key: poetry-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
-
-      - name: Load cached Poetry venv
-        uses: actions/cache@v4
-        with:
-          path: ~/.venv
-          key: poetry-venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
-
-      - name: Install package
-        run: |
-          poetry install --no-interaction
+      - name: Install dependecies
+        run: uv sync --all-groups
 
       - name: Run HACS
         uses: "hacs/action@main"
@@ -152,30 +193,24 @@ jobs:
   hassfest:
     needs: cache
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version:
+          - "3.12"
+          - "3.13"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Python
-        uses: actions/setup-python@v5
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
         with:
-          python-version: "3.11"
+          python-version: ${{ matrix.python-version }}
+          enable-cache: true
+          cache-suffix: uv-${{ runner.os }}-${{ matrix.python-version }}
 
-      - name: Load cached Poetry installation
-        uses: actions/cache@v4
-        with:
-          path: ~/.local
-          key: poetry-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
-
-      - name: Load cached Poetry venv
-        uses: actions/cache@v4
-        with:
-          path: ~/.venv
-          key: poetry-venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
-
-      - name: Install package
-        run: |
-          poetry install --no-interaction
+      - name: Install dependecies
+        run: uv sync --all-groups
 
       - name: Run Hassfest
         uses: home-assistant/actions/hassfest@master
