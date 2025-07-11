@@ -1,6 +1,5 @@
 from __future__ import annotations
 import logging
-from email.policy import default
 from typing import TYPE_CHECKING, Any
 
 import voluptuous as vol
