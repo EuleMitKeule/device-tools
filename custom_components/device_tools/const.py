@@ -6,6 +6,7 @@ DOMAIN = "device_tools"
 
 CONF_MODIFICATION_TYPE = "modification_type"
 CONF_MODIFICATION_ENTRY_ID = "modification_entry_id"
+CONF_MODIFICATION_ENTRY_NAME = "modification_entry_name"
 CONF_MODIFICATION_DATA = "modification_data"
 CONF_MODIFICATION_ORIGINAL_DATA = "modification_original_data"
 CONF_MANUFACTURER = "manufacturer"
@@ -14,7 +15,13 @@ CONF_SW_VERSION = "sw_version"
 CONF_HW_VERSION = "hw_version"
 CONF_SERIAL_NUMBER = "serial_number"
 CONF_VIA_DEVICE_ID = "via_device_id"
+
 CONF_DEVICE_ID = "device_id"
+
+CONF_MERGE_DEVICE_IDS = "merge_device_ids"
+CONF_ENTITIES = "entities"
+CONF_DISABLED_BY = "disabled_by"
+CONF_DISABLE_MERGED_DEVICES = "disable_merged_devices"
 
 
 class ModificationType(StrEnum):
@@ -22,6 +29,7 @@ class ModificationType(StrEnum):
 
     DEVICE = "device"
     ENTITY = "entity"
+    MERGE = "merge"
 
 
 MODIFIABLE_ATTRIBUTES = {
@@ -35,6 +43,9 @@ MODIFIABLE_ATTRIBUTES = {
     ],
     ModificationType.ENTITY: [
         CONF_DEVICE_ID,
+    ],
+    ModificationType.MERGE: [
+        CONF_MERGE_DEVICE_IDS,
     ],
 }
 

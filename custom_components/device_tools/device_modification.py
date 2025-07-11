@@ -4,11 +4,12 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import Event, HomeAssistant
 from homeassistant.helpers import device_registry as dr
 
+from .const import CONF_MODIFICATION_ENTRY_ID, DOMAIN
 from .device_listener import DeviceListener
 from .modification import Modification
 
 
-class DeviceModification(Modification[DeviceListener]):
+class DeviceModification(Modification):
     """Class to handle a device modification."""
 
     def __init__(
@@ -21,10 +22,25 @@ class DeviceModification(Modification[DeviceListener]):
         super().__init__(
             hass=hass,
             config_entry=config_entry,
-            listener=listener,
         )
 
         self._registry = dr.async_get(hass)
+        self._listener: DeviceListener = listener
+
+        if not self.modification_entry_id:
+            device = self._registry.async_get_or_create(
+                config_entry_id=config_entry.entry_id,
+                identifiers={(DOMAIN, config_entry.entry_id)},
+                name=self.modification_entry_name,
+            )
+
+            self._hass.config_entries.async_update_entry(
+                config_entry,
+                data={
+                    **config_entry.data,
+                    CONF_MODIFICATION_ENTRY_ID: device.id,
+                },
+            )
 
         self._listener.register_callback(
             self.modification_entry_id,
@@ -53,10 +69,14 @@ class DeviceModification(Modification[DeviceListener]):
             self.modification_entry_id,
             self._on_entry_updated,
         )
-        self._registry.async_update_device(
-            self.modification_entry_id,
-            **self._overwritten_original_data,
-        )
+        if self._is_custom_device:
+            self._registry.async_remove_device(self.modification_entry_id)
+        else:
+            self._registry.async_update_device(
+                self.modification_entry_id,
+                remove_config_entry_id=self._config_entry.entry_id,
+                **self._overwritten_original_data,
+            )
 
     async def _on_entry_updated(
         self,

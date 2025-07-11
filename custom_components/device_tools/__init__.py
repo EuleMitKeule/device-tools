@@ -19,6 +19,7 @@ from .device_listener import DeviceListener
 from .device_modification import DeviceModification
 from .entity_listener import EntityListener
 from .entity_modification import EntityModification
+from .merge_modification import MergeModification
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 _LOGGER = logging.getLogger(__name__)
@@ -44,7 +45,6 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
     device_tools_data: DeviceToolsData = hass.data[DATA_KEY]
 
     modification_type: ModificationType = config_entry.data[CONF_MODIFICATION_TYPE]
-    modification_entry_id: str = config_entry.data[CONF_MODIFICATION_ENTRY_ID]
 
     match modification_type:
         case ModificationType.DEVICE:
@@ -59,7 +59,15 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
                 config_entry,
                 device_tools_data.entity_listener,
             )
+        case ModificationType.MERGE:
+            modification = MergeModification(
+                hass,
+                config_entry,
+                device_tools_data.device_listener,
+                device_tools_data.entity_listener,
+            )
 
+    modification_entry_id: str = config_entry.data[CONF_MODIFICATION_ENTRY_ID]
     device_tools_data.modifications[modification_entry_id] = modification
 
     config_entry.async_on_unload(config_entry.add_update_listener(update_listener))

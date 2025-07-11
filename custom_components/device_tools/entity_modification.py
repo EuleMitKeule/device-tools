@@ -8,7 +8,7 @@ from .entity_listener import EntityListener
 from .modification import Modification
 
 
-class EntityModification(Modification[EntityListener]):
+class EntityModification(Modification):
     """Class to handle an entity modification."""
 
     def __init__(
@@ -21,10 +21,10 @@ class EntityModification(Modification[EntityListener]):
         super().__init__(
             hass=hass,
             config_entry=config_entry,
-            listener=listener,
         )
 
         self._registry = er.async_get(hass)
+        self._listener = listener
 
         self._listener.register_callback(
             self.modification_entry_id, self._on_entry_updated

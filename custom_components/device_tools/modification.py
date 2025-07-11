@@ -10,28 +10,25 @@ from homeassistant.core import HomeAssistant
 from .const import (
     CONF_MODIFICATION_DATA,
     CONF_MODIFICATION_ENTRY_ID,
+    CONF_MODIFICATION_ENTRY_NAME,
     CONF_MODIFICATION_ORIGINAL_DATA,
     CONF_MODIFICATION_TYPE,
     MODIFIABLE_ATTRIBUTES,
     ModificationType,
 )
-from .device_listener import DeviceListener
-from .entity_listener import EntityListener
 
 
-class Modification[TListener: (DeviceListener | EntityListener)](ABC):
+class Modification(ABC):
     """Class to handle a modification."""
 
     def __init__(
         self,
         hass: HomeAssistant,
         config_entry: ConfigEntry,
-        listener: TListener,
     ) -> None:
         """Initialize the modification."""
         self._hass = hass
         self._config_entry: ConfigEntry = config_entry
-        self._listener: TListener = listener
 
     @abstractmethod
     async def apply(self) -> None:
@@ -42,26 +39,31 @@ class Modification[TListener: (DeviceListener | EntityListener)](ABC):
         """Revert modification."""
 
     @property
+    def modification_type(self) -> ModificationType:
+        """Return the modification type."""
+        return self._config_entry.data[CONF_MODIFICATION_TYPE]
+
+    @property
     def modification_entry_id(self) -> str:
         """Return the modification entry ID."""
         return self._config_entry.data[CONF_MODIFICATION_ENTRY_ID]
 
     @property
-    def modification_type(self) -> ModificationType:
-        """Return the modification type."""
-        return self._config_entry.data.get(CONF_MODIFICATION_TYPE)
+    def modification_entry_name(self) -> str:
+        """Return the modification entry name."""
+        return self._config_entry.data[CONF_MODIFICATION_ENTRY_NAME]
 
     @property
     def modification_original_data(self) -> MappingProxyType[str, Any]:
         """Return the original data before modification."""
         return MappingProxyType(
-            self._config_entry.data.get(CONF_MODIFICATION_ORIGINAL_DATA)
+            self._config_entry.data[CONF_MODIFICATION_ORIGINAL_DATA]
         )
 
     @property
     def modification_data(self) -> MappingProxyType[str, Any]:
         """Return the modification data."""
-        return MappingProxyType(self._config_entry.options.get(CONF_MODIFICATION_DATA))
+        return MappingProxyType(self._config_entry.options[CONF_MODIFICATION_DATA])
 
     @property
     def _overwritten_original_data(self) -> MappingProxyType[str, Any]:
