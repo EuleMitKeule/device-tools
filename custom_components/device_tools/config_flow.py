@@ -37,6 +37,7 @@ from .const import (
     CONF_MODIFICATION_DATA,
     CONF_MODIFICATION_ENTRY_ID,
     CONF_MODIFICATION_ENTRY_NAME,
+    CONF_MODIFICATION_IS_CUSTOM_ENTRY,
     CONF_MODIFICATION_ORIGINAL_DATA,
     CONF_MODIFICATION_TYPE,
     CONF_SERIAL_NUMBER,
@@ -458,6 +459,7 @@ class DeviceToolsConfigFlow(ConfigFlow, domain=DOMAIN):
         self._modification_type: ModificationType = ModificationType.DEVICE
         self._modification_entry_id: str | None = None
         self._modification_entry_name: str | None = None
+        self._modification_is_custom_entry: bool = False
         self._modification_original_data: dict[str, Any] = {}
         self._modification_data: dict[str, Any] = {}
 
@@ -529,6 +531,7 @@ class DeviceToolsConfigFlow(ConfigFlow, domain=DOMAIN):
             )
 
         self._modification_entry_name = user_input[CONF_MODIFICATION_ENTRY_NAME]
+        self._modification_is_custom_entry = True
 
         return await self.async_step_modify_entry()
 
@@ -598,10 +601,11 @@ class DeviceToolsConfigFlow(ConfigFlow, domain=DOMAIN):
                 device_registry = dr.async_get(self.hass)
                 device = device_registry.async_get(self._modification_entry_id)
 
-                if device is None:
-                    return self.async_abort(reason="entry_not_found")
+                if device:
+                    modification_original_data = device.dict_repr
+                else:
+                    modification_original_data = {}
 
-                modification_original_data = device.dict_repr
             case ModificationType.ENTITY:
                 entity_registry = er.async_get(self.hass)
                 entity = entity_registry.async_get(self._modification_entry_id)
@@ -653,6 +657,7 @@ class DeviceToolsConfigFlow(ConfigFlow, domain=DOMAIN):
                 CONF_MODIFICATION_ENTRY_ID: self._modification_entry_id,
                 CONF_MODIFICATION_ENTRY_NAME: self._modification_entry_name,
                 CONF_MODIFICATION_ORIGINAL_DATA: self._modification_original_data,
+                CONF_MODIFICATION_IS_CUSTOM_ENTRY: self._modification_is_custom_entry,
             },
             options={
                 CONF_MODIFICATION_DATA: self._modification_data,

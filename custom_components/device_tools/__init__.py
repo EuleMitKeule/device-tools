@@ -6,10 +6,12 @@ import logging
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import config_validation as cv, device_registry as dr
 
 from .const import (
     CONF_MODIFICATION_ENTRY_ID,
+    CONF_MODIFICATION_ENTRY_NAME,
+    CONF_MODIFICATION_IS_CUSTOM_ENTRY,
     CONF_MODIFICATION_TYPE,
     DOMAIN,
     ModificationType,
@@ -45,6 +47,30 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
     device_tools_data: DeviceToolsData = hass.data[DATA_KEY]
 
     modification_type: ModificationType = config_entry.data[CONF_MODIFICATION_TYPE]
+    modification_entry_id: str = config_entry.data[CONF_MODIFICATION_ENTRY_ID]
+    modification_entry_name: str = config_entry.data[CONF_MODIFICATION_ENTRY_NAME]
+    modification_is_custom_entry: bool = config_entry.data[
+        CONF_MODIFICATION_IS_CUSTOM_ENTRY
+    ]
+
+    if modification_is_custom_entry:
+        _LOGGER.debug(
+            "Creating device for modification entry %s",
+            config_entry.entry_id,
+        )
+        device = dr.async_get(hass).async_get_or_create(
+            config_entry_id=config_entry.entry_id,
+            identifiers={(DOMAIN, config_entry.entry_id)},
+            name=modification_entry_name,
+        )
+        modification_entry_id = device.id
+        hass.config_entries.async_update_entry(
+            config_entry,
+            data={
+                **config_entry.data,
+                CONF_MODIFICATION_ENTRY_ID: device.id,
+            },
+        )
 
     match modification_type:
         case ModificationType.DEVICE:
@@ -67,7 +93,6 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
                 device_tools_data.entity_listener,
             )
 
-    modification_entry_id: str = config_entry.data[CONF_MODIFICATION_ENTRY_ID]
     device_tools_data.modifications[modification_entry_id] = modification
 
     config_entry.async_on_unload(config_entry.add_update_listener(update_listener))
@@ -90,10 +115,20 @@ async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> 
     device_tools_data: DeviceToolsData = hass.data[DATA_KEY]
 
     modification_entry_id: str = config_entry.data[CONF_MODIFICATION_ENTRY_ID]
+    modification_is_custom_entry: bool = config_entry.data[
+        CONF_MODIFICATION_IS_CUSTOM_ENTRY
+    ]
     modification = device_tools_data.modifications.pop(modification_entry_id)
 
     if modification:
         await modification.revert()
+
+    if modification_is_custom_entry:
+        _LOGGER.debug(
+            "Removing device for modification entry %s",
+            config_entry.entry_id,
+        )
+        dr.async_get(hass).async_remove_device(modification_entry_id)
 
     return True
 

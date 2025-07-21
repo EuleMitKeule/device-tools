@@ -6,6 +6,7 @@ DOMAIN = "device_tools"
 
 CONF_MODIFICATION_TYPE = "modification_type"
 CONF_MODIFICATION_ENTRY_ID = "modification_entry_id"
+CONF_MODIFICATION_IS_CUSTOM_ENTRY = "modification_is_custom_entry"
 CONF_MODIFICATION_ENTRY_NAME = "modification_entry_name"
 CONF_MODIFICATION_DATA = "modification_data"
 CONF_MODIFICATION_ORIGINAL_DATA = "modification_original_data"
