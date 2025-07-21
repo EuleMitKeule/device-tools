@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, TypedDict
+from typing import Any
 
 import voluptuous as vol
 
@@ -14,16 +14,8 @@ from homeassistant.config_entries import (
     ConfigFlowResult,
     OptionsFlow,
 )
-from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers import device_registry as dr, entity_registry as er
-from homeassistant.helpers.selector import (
-    SelectOptionDict,
-    SelectSelector,
-    SelectSelectorConfig,
-    SelectSelectorMode,
-    TextSelector,
-    TextSelectorConfig,
-)
+from homeassistant.core import callback
+from homeassistant.helpers import device_registry as dr, entity_registry as er, selector
 
 from .const import (
     CONF_DEVICE_ID,
@@ -52,15 +44,12 @@ _LOGGER = logging.getLogger(__name__)
 
 
 def _get_device_options_schema(
-    hass: HomeAssistant,
     modification_entry_id: str,
     modification_entry_name: str,
     modification_data: dict[str, Any],
     modification_original_data: dict[str, Any],
 ) -> vol.Schema:
     """Return the schema for a device modification."""
-    device_registry = dr.async_get(hass)
-
     return vol.Schema(
         {
             vol.Optional(
@@ -68,13 +57,13 @@ def _get_device_options_schema(
                 description={
                     "suggested_value": modification_entry_id,
                 },
-            ): TextSelector(TextSelectorConfig(read_only=True)),
+            ): selector.TextSelector(selector.TextSelectorConfig(read_only=True)),
             vol.Optional(
                 CONF_MODIFICATION_ENTRY_NAME,
                 description={
                     "suggested_value": modification_entry_name,
                 },
-            ): TextSelector(TextSelectorConfig(read_only=True)),
+            ): selector.TextSelector(selector.TextSelectorConfig(read_only=True)),
             vol.Optional(
                 CONF_MANUFACTURER,
                 description={
@@ -125,19 +114,9 @@ def _get_device_options_schema(
                         modification_original_data.get(CONF_VIA_DEVICE_ID),
                     )
                 },
-            ): SelectSelector(
-                SelectSelectorConfig(
-                    options=[
-                        SelectOptionDict(
-                            {
-                                "value": device.id,
-                                "label": _name_for_device(device),
-                            }
-                        )
-                        for device in device_registry.devices.values()
-                        if device.id != modification_entry_id
-                    ],
-                    mode=SelectSelectorMode.DROPDOWN,
+            ): selector.DeviceSelector(
+                selector.DeviceSelectorConfig(
+                    multiple=False,
                 )
             ),
         }
@@ -145,15 +124,12 @@ def _get_device_options_schema(
 
 
 def _get_entity_options_schema(
-    hass: HomeAssistant,
     modification_entry_id: str,
     modification_entry_name: str,
-    modification_data: dict[str, Any],
     modification_original_data: dict[str, Any],
+    modification_data: dict[str, Any],
 ) -> vol.Schema:
     """Return the schema for an entity modification."""
-    device_registry = dr.async_get(hass)
-
     return vol.Schema(
         {
             vol.Optional(
@@ -161,13 +137,13 @@ def _get_entity_options_schema(
                 description={
                     "suggested_value": modification_entry_id,
                 },
-            ): TextSelector(TextSelectorConfig(read_only=True)),
+            ): selector.TextSelector(selector.TextSelectorConfig(read_only=True)),
             vol.Optional(
                 CONF_MODIFICATION_ENTRY_NAME,
                 description={
                     "suggested_value": modification_entry_name,
                 },
-            ): TextSelector(TextSelectorConfig(read_only=True)),
+            ): selector.TextSelector(selector.TextSelectorConfig(read_only=True)),
             vol.Optional(
                 CONF_DEVICE_ID,
                 description={
@@ -175,18 +151,9 @@ def _get_entity_options_schema(
                         CONF_DEVICE_ID, modification_original_data.get(CONF_DEVICE_ID)
                     )
                 },
-            ): SelectSelector(
-                SelectSelectorConfig(
-                    options=[
-                        SelectOptionDict(
-                            {
-                                "value": device.id,
-                                "label": _name_for_device(device),
-                            }
-                        )
-                        for device in device_registry.devices.values()
-                    ],
-                    mode=SelectSelectorMode.DROPDOWN,
+            ): selector.DeviceSelector(
+                selector.DeviceSelectorConfig(
+                    multiple=False,
                 )
             ),
         }
@@ -194,15 +161,12 @@ def _get_entity_options_schema(
 
 
 def _get_merge_options_schema(
-    hass: HomeAssistant,
     modification_entry_id: str,
     modification_entry_name: str,
     modification_original_data: dict[str, Any],
     modification_data: dict[str, Any],
 ) -> vol.Schema:
     """Return the schema for a merge modification."""
-    device_registry = dr.async_get(hass)
-
     return vol.Schema(
         {
             vol.Optional(
@@ -210,31 +174,20 @@ def _get_merge_options_schema(
                 description={
                     "suggested_value": modification_entry_id,
                 },
-            ): TextSelector(TextSelectorConfig(read_only=True)),
+            ): selector.TextSelector(selector.TextSelectorConfig(read_only=True)),
             vol.Optional(
                 CONF_MODIFICATION_ENTRY_NAME,
                 description={
                     "suggested_value": modification_entry_name,
                 },
-            ): TextSelector(TextSelectorConfig(read_only=True)),
+            ): selector.TextSelector(selector.TextSelectorConfig(read_only=True)),
             vol.Optional(
                 CONF_MERGE_DEVICE_IDS,
                 description={
                     "suggested_value": list(modification_original_data.keys()),
                 },
-            ): SelectSelector(
-                SelectSelectorConfig(
-                    options=[
-                        SelectOptionDict(
-                            {
-                                "value": device.id,
-                                "label": _name_for_device(device),
-                            }
-                        )
-                        for device in device_registry.devices.values()
-                        if device.id != modification_entry_id
-                    ],
-                    mode=SelectSelectorMode.DROPDOWN,
+            ): selector.DeviceSelector(
+                selector.DeviceSelectorConfig(
                     multiple=True,
                     read_only=True,
                 )
@@ -252,7 +205,6 @@ def _get_merge_options_schema(
 
 
 def _get_options_schema(
-    hass: HomeAssistant,
     modification_type: ModificationType,
     modification_entry_id: str,
     modification_entry_name: str,
@@ -263,7 +215,6 @@ def _get_options_schema(
     match modification_type:
         case ModificationType.DEVICE:
             return _get_device_options_schema(
-                hass,
                 modification_entry_id,
                 modification_entry_name,
                 modification_original_data or {},
@@ -271,7 +222,6 @@ def _get_options_schema(
             )
         case ModificationType.ENTITY:
             return _get_entity_options_schema(
-                hass,
                 modification_entry_id,
                 modification_entry_name,
                 modification_original_data or {},
@@ -279,7 +229,6 @@ def _get_options_schema(
             )
         case ModificationType.MERGE:
             return _get_merge_options_schema(
-                hass,
                 modification_entry_id,
                 modification_entry_name,
                 modification_original_data or {},
@@ -287,28 +236,12 @@ def _get_options_schema(
             )
 
 
-def _get_merge_schema(
-    hass: HomeAssistant,
-    modification_entry_id: str,
-) -> vol.Schema:
+def _get_merge_schema() -> vol.Schema:
     """Return the schema for merging entries."""
-    device_registry = dr.async_get(hass)
-
     return vol.Schema(
         {
-            vol.Required(CONF_MERGE_DEVICE_IDS, default=[]): SelectSelector(
-                SelectSelectorConfig(
-                    options=[
-                        SelectOptionDict(
-                            {
-                                "value": device.id,
-                                "label": _name_for_device(device),
-                            }
-                        )
-                        for device in device_registry.devices.values()
-                        if device.id != modification_entry_id
-                    ],
-                    mode=SelectSelectorMode.DROPDOWN,
+            vol.Required(CONF_MERGE_DEVICE_IDS, default=[]): selector.DeviceSelector(
+                selector.DeviceSelectorConfig(
                     multiple=True,
                 )
             ),
@@ -316,85 +249,39 @@ def _get_merge_schema(
     )
 
 
-def _get_data_schema(
-    hass: HomeAssistant,
-    current_entries: list[ConfigEntry[Any]],
+def _get_select_schema(
     modification_type: ModificationType,
 ) -> vol.Schema:
     """Return the data schema for a modification."""
-    device_registry = dr.async_get(hass)
-    entity_registry = er.async_get(hass)
-    existing_entry_ids = {
-        entry.data[CONF_MODIFICATION_ENTRY_ID]
-        for entry in current_entries
-        if entry.data[CONF_MODIFICATION_TYPE] == modification_type
-        and modification_type != ModificationType.MERGE
-    }
-
-    class ModificationEntry(TypedDict):
-        """Entry class."""
-
-        id: str
-        name: str
-
-    entries = [
-        ModificationEntry(
-            {
-                "id": entry.id,
-                "name": _name_for_device(entry)
-                if isinstance(entry, dr.DeviceEntry)
-                else _name_for_entity(entry),
-            }
-        )
-        for entry in filter(
-            lambda entry: entry.id not in existing_entry_ids
-            and entry.disabled_by is None,
-            (
-                device_registry.devices.values()
-                if modification_type
-                in [ModificationType.DEVICE, ModificationType.MERGE]
-                else entity_registry.entities.values()
-            ),
-        )
-    ]
-
     match modification_type:
         case ModificationType.DEVICE:
             return vol.Schema(
                 {
-                    vol.Optional(CONF_MODIFICATION_ENTRY_ID): SelectSelector(
-                        SelectSelectorConfig(
-                            options=[
-                                SelectOptionDict(
-                                    {
-                                        "value": entry["id"],
-                                        "label": entry["name"],
-                                    }
-                                )
-                                for entry in entries
-                            ],
-                            mode=SelectSelectorMode.DROPDOWN,
+                    vol.Optional(CONF_MODIFICATION_ENTRY_ID): selector.DeviceSelector(
+                        selector.DeviceSelectorConfig(
+                            multiple=False,
                         )
-                    )
+                    ),
                 }
             )
-        case ModificationType.ENTITY | ModificationType.MERGE:
+        case ModificationType.ENTITY:
             return vol.Schema(
                 {
-                    vol.Required(CONF_MODIFICATION_ENTRY_ID): SelectSelector(
-                        SelectSelectorConfig(
-                            options=[
-                                SelectOptionDict(
-                                    {
-                                        "value": entry["id"],
-                                        "label": entry["name"],
-                                    }
-                                )
-                                for entry in entries
-                            ],
-                            mode=SelectSelectorMode.DROPDOWN,
+                    vol.Required(CONF_MODIFICATION_ENTRY_ID): selector.EntitySelector(
+                        selector.EntitySelectorConfig(
+                            multiple=False,
                         )
-                    )
+                    ),
+                }
+            )
+        case ModificationType.MERGE:
+            return vol.Schema(
+                {
+                    vol.Required(CONF_MODIFICATION_ENTRY_ID): selector.DeviceSelector(
+                        selector.DeviceSelectorConfig(
+                            multiple=False,
+                        )
+                    ),
                 }
             )
 
@@ -489,9 +376,7 @@ class DeviceToolsConfigFlow(ConfigFlow, domain=DOMAIN):
     ) -> ConfigFlowResult:
         """Select the entry to modify."""
 
-        schema = _get_data_schema(
-            self.hass, self._async_current_entries(), self._modification_type
-        )
+        schema = _get_select_schema(self._modification_type)
 
         if user_input is None:
             match self._modification_type:
@@ -542,10 +427,7 @@ class DeviceToolsConfigFlow(ConfigFlow, domain=DOMAIN):
         if user_input is None:
             return self.async_show_form(
                 step_id="merge_entry",
-                data_schema=_get_merge_schema(
-                    self.hass,
-                    self._modification_entry_id,
-                ),
+                data_schema=_get_merge_schema(),
             )
 
         self._modification_original_data = {
@@ -576,12 +458,11 @@ class DeviceToolsConfigFlow(ConfigFlow, domain=DOMAIN):
             return self.async_show_form(
                 step_id="merge_entry_options",
                 data_schema=_get_options_schema(
-                    self.hass,
                     self._modification_type,
                     self._modification_entry_id,
                     self._modification_entry_name,
-                    {},
-                    {},
+                    self._modification_original_data,
+                    self._modification_data,
                 ),
             )
 
@@ -625,7 +506,6 @@ class DeviceToolsConfigFlow(ConfigFlow, domain=DOMAIN):
             return self.async_show_form(
                 step_id="modify_entry",
                 data_schema=_get_options_schema(
-                    self.hass,
                     self._modification_type,
                     self._modification_entry_id,
                     self._modification_entry_name,
@@ -693,7 +573,6 @@ class OptionsFlowHandler(OptionsFlow):
         ]
 
         schema = _get_options_schema(
-            self.hass,
             modification_type,
             modification_entry_id,
             modification_entry_name,
