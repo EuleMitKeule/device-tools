@@ -209,7 +209,7 @@ jobs:
           cache-suffix: uv-${{ runner.os }}-${{ matrix.python-version }}
 
       - name: Install dependecies
-        run: uv sync
+        run: uv sync --no-group dev --no-group test
 
       - name: Run Hassfest
         uses: home-assistant/actions/hassfest@master
