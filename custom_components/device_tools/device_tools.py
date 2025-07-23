@@ -272,6 +272,7 @@ class DeviceTools:
                 "hw_version": device.hw_version,
                 "serial_number": device.serial_number,
                 "via_device_id": device.via_device_id,
+                "connections": device.connections,
                 "config_entries": device.config_entries,
                 "config_entries_set_by_device_tools": set(),
             }
@@ -391,6 +392,7 @@ class DeviceTools:
             hw_version=original_device_config["hw_version"],
             serial_number=original_device_config["serial_number"],
             via_device_id=original_device_config["via_device_id"],
+            new_connections=original_device_config["connections"],
         )
 
         for config_entry_id in original_device_config["config_entries"]:
@@ -473,6 +475,7 @@ class DeviceTools:
         hw_version: str | None = attribute_modification.get("hw_version")
         serial_number: str | None = attribute_modification.get("serial_number")
         via_device_id: str | None = attribute_modification.get("via_device_id")
+        connections: set[tuple[str, str]] | None = attribute_modification.get("connections")
 
         self._device_registry.async_update_device(
             device.id,
@@ -482,6 +485,7 @@ class DeviceTools:
             hw_version=hw_version,
             serial_number=serial_number,
             via_device_id=via_device_id,
+            merge_connections=connections
         )
 
         self._device_registry.async_update_device(device.id)
