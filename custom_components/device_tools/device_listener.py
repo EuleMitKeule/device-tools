@@ -1,5 +1,7 @@
 """Listener for device registry updates."""
 
+import asyncio
+
 from homeassistant.core import Event, HomeAssistant
 from homeassistant.helpers import device_registry as dr
 
@@ -35,4 +37,7 @@ class DeviceListener(Listener[dr.DeviceEntry, dr.EventDeviceRegistryUpdatedData]
             return
 
         for callback in self._callbacks[device_id]:
-            await callback(device, event)
+            if asyncio.iscoroutinefunction(callback):
+                await callback(device, event)
+            else:
+                callback(device, event)

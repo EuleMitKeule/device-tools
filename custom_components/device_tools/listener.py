@@ -5,7 +5,8 @@ from collections import defaultdict
 from collections.abc import Awaitable, Callable
 
 from homeassistant.core import Event, HomeAssistant
-from homeassistant.helpers import device_registry as dr, entity_registry as er
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 
 
 class Listener[
@@ -27,6 +28,10 @@ class Listener[
                     [TEntry, Event[TEventData]],
                     Awaitable[None],
                 ]
+                | Callable[
+                    [TEntry, Event[TEventData]],
+                    None,
+                ],
             ],
         ] = defaultdict(list)
 

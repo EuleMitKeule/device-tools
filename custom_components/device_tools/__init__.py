@@ -29,7 +29,7 @@ CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 _LOGGER = logging.getLogger(__name__)
 
 
-async def async_setup(hass: HomeAssistant, _config: ConfigType) -> bool:
+def setup(hass: HomeAssistant, _config: ConfigType) -> bool:
     """Set up the device tools component."""
     _LOGGER.debug("Setting up Device Tools")
 

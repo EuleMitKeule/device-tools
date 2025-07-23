@@ -1,5 +1,7 @@
 """Listener for entity registry updates."""
 
+import asyncio
+
 from homeassistant.core import Event, HomeAssistant
 from homeassistant.helpers import entity_registry as er
 
@@ -35,4 +37,7 @@ class EntityListener(Listener[er.RegistryEntry, er.EventEntityRegistryUpdatedDat
             return
 
         for callback in self._callbacks[entity_id]:
-            await callback(entity, event)
+            if asyncio.iscoroutinefunction(callback):
+                await callback(entity, event)
+            else:
+                callback(entity, event)
