@@ -4,7 +4,8 @@ import logging
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import Event, HomeAssistant
-from homeassistant.helpers import device_registry as dr, entity_registry as er
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 
 from .const import CONF_DISABLE_MERGED_DEVICES, CONF_DISABLED_BY, CONF_ENTITIES
 from .device_listener import DeviceListener
@@ -70,12 +71,12 @@ class MergeModification(Modification):
     def merge_entity_ids(self) -> set[str]:
         """Return the entity IDs associated with the merge modification."""
         return {
-            (entry := self._entity_registry.async_get(merge_entity_entry_id))
-            and entry.entity_id
+            entry.entity_id
             for merge_device_entry_id in self.merge_device_entry_ids
             for merge_entity_entry_id in self.modification_original_data[
                 merge_device_entry_id
             ][CONF_ENTITIES]
+            if (entry := self._entity_registry.async_get(merge_entity_entry_id))
         }
 
     async def apply(self) -> None:
@@ -164,17 +165,17 @@ class MergeModification(Modification):
             f"Entity entry ID {entity_entry_id} not found in the original data of modification {self.modification_entry_id}"
         )
 
-    def _on_entry_updated(
+    async def _on_entry_updated(
         self, device: dr.DeviceEntry, event: Event[dr.EventDeviceRegistryUpdatedData]
     ) -> None:
         """Handle updates to the device entry."""
 
-    def _on_merge_device_updated(
+    async def _on_merge_device_updated(
         self, device: dr.DeviceEntry, event: Event[dr.EventDeviceRegistryUpdatedData]
     ) -> None:
         """Handle updates to the merged device."""
 
-    def _on_merge_entity_updated(
+    async def _on_merge_entity_updated(
         self, entity: er.RegistryEntry, event: Event[er.EventEntityRegistryUpdatedData]
     ) -> None:
         """Handle updates to the merged entity."""

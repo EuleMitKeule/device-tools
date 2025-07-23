@@ -3,19 +3,19 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import voluptuous as vol
-
 from homeassistant.config_entries import (
     ConfigEntry,
-    ConfigEntryBaseFlow,
     ConfigFlow,
     ConfigFlowResult,
     OptionsFlow,
 )
 from homeassistant.core import callback
-from homeassistant.helpers import device_registry as dr, entity_registry as er, selector
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import selector
 
 from .const import (
     CONF_DEVICE_ID,
@@ -44,26 +44,12 @@ _LOGGER = logging.getLogger(__name__)
 
 
 def _get_device_options_schema(
-    modification_entry_id: str,
-    modification_entry_name: str,
     modification_data: dict[str, Any],
     modification_original_data: dict[str, Any],
 ) -> vol.Schema:
     """Return the schema for a device modification."""
     return vol.Schema(
         {
-            vol.Optional(
-                CONF_MODIFICATION_ENTRY_ID,
-                description={
-                    "suggested_value": modification_entry_id,
-                },
-            ): selector.TextSelector(selector.TextSelectorConfig(read_only=True)),
-            vol.Optional(
-                CONF_MODIFICATION_ENTRY_NAME,
-                description={
-                    "suggested_value": modification_entry_name,
-                },
-            ): selector.TextSelector(selector.TextSelectorConfig(read_only=True)),
             vol.Optional(
                 CONF_MANUFACTURER,
                 description={
@@ -124,26 +110,12 @@ def _get_device_options_schema(
 
 
 def _get_entity_options_schema(
-    modification_entry_id: str,
-    modification_entry_name: str,
     modification_original_data: dict[str, Any],
     modification_data: dict[str, Any],
 ) -> vol.Schema:
     """Return the schema for an entity modification."""
     return vol.Schema(
         {
-            vol.Optional(
-                CONF_MODIFICATION_ENTRY_ID,
-                description={
-                    "suggested_value": modification_entry_id,
-                },
-            ): selector.TextSelector(selector.TextSelectorConfig(read_only=True)),
-            vol.Optional(
-                CONF_MODIFICATION_ENTRY_NAME,
-                description={
-                    "suggested_value": modification_entry_name,
-                },
-            ): selector.TextSelector(selector.TextSelectorConfig(read_only=True)),
             vol.Optional(
                 CONF_DEVICE_ID,
                 description={
@@ -161,37 +133,11 @@ def _get_entity_options_schema(
 
 
 def _get_merge_options_schema(
-    modification_entry_id: str,
-    modification_entry_name: str,
-    modification_original_data: dict[str, Any],
     modification_data: dict[str, Any],
 ) -> vol.Schema:
     """Return the schema for a merge modification."""
     return vol.Schema(
         {
-            vol.Optional(
-                CONF_MODIFICATION_ENTRY_ID,
-                description={
-                    "suggested_value": modification_entry_id,
-                },
-            ): selector.TextSelector(selector.TextSelectorConfig(read_only=True)),
-            vol.Optional(
-                CONF_MODIFICATION_ENTRY_NAME,
-                description={
-                    "suggested_value": modification_entry_name,
-                },
-            ): selector.TextSelector(selector.TextSelectorConfig(read_only=True)),
-            vol.Optional(
-                CONF_MERGE_DEVICE_IDS,
-                description={
-                    "suggested_value": list(modification_original_data.keys()),
-                },
-            ): selector.DeviceSelector(
-                selector.DeviceSelectorConfig(
-                    multiple=True,
-                    read_only=True,
-                )
-            ),
             vol.Required(
                 CONF_DISABLE_MERGED_DEVICES,
                 description={
@@ -206,8 +152,6 @@ def _get_merge_options_schema(
 
 def _get_options_schema(
     modification_type: ModificationType,
-    modification_entry_id: str,
-    modification_entry_name: str,
     modification_original_data: dict[str, Any] | None,
     modification_data: dict[str, Any],
 ) -> vol.Schema:
@@ -215,23 +159,16 @@ def _get_options_schema(
     match modification_type:
         case ModificationType.DEVICE:
             return _get_device_options_schema(
-                modification_entry_id,
-                modification_entry_name,
                 modification_original_data or {},
                 modification_data,
             )
         case ModificationType.ENTITY:
             return _get_entity_options_schema(
-                modification_entry_id,
-                modification_entry_name,
                 modification_original_data or {},
                 modification_data,
             )
         case ModificationType.MERGE:
             return _get_merge_options_schema(
-                modification_entry_id,
-                modification_entry_name,
-                modification_original_data or {},
                 modification_data,
             )
 
@@ -296,27 +233,6 @@ def _name_for_entity(entity: er.RegistryEntry) -> str:
     return entity.name or entity.original_name or entity.entity_id
 
 
-def _name_for_entry(
-    flow: ConfigEntryBaseFlow,
-    modification_type: ModificationType,
-    modification_entry_id: str,
-) -> str:
-    """Return the name for a config entry."""
-    match modification_type:
-        case ModificationType.DEVICE | ModificationType.MERGE:
-            device_registry = dr.async_get(flow.hass)
-            device = device_registry.async_get(modification_entry_id)
-            if device is None:
-                flow.async_abort(reason="entry_not_found")
-            return _name_for_device(device)
-        case ModificationType.ENTITY:
-            entity_registry = er.async_get(flow.hass)
-            entity = entity_registry.async_get(modification_entry_id)
-            if entity is None:
-                flow.async_abort(reason="entry_not_found")
-            return _name_for_entity(entity)
-
-
 def _user_input_to_modification_data(
     user_input: dict[str, Any],
     modification_original_data: dict[str, Any] | None,
@@ -375,7 +291,6 @@ class DeviceToolsConfigFlow(ConfigFlow, domain=DOMAIN):
         user_input: dict[str, Any] | None = None,
     ) -> ConfigFlowResult:
         """Select the entry to modify."""
-
         schema = _get_select_schema(self._modification_type)
 
         if user_input is None:
@@ -394,9 +309,19 @@ class DeviceToolsConfigFlow(ConfigFlow, domain=DOMAIN):
         if self._modification_entry_id is None:
             return await self.async_step_create_entry()
 
-        self._modification_entry_name = _name_for_entry(
-            self, self._modification_type, self._modification_entry_id
-        )
+        match self._modification_type:
+            case ModificationType.DEVICE | ModificationType.MERGE:
+                device_registry = dr.async_get(self.hass)
+                device = device_registry.async_get(self._modification_entry_id)
+                if device is None:
+                    return self.async_abort(reason="entry_not_found")
+                self._modification_entry_name = _name_for_device(device)
+            case ModificationType.ENTITY:
+                entity_registry = er.async_get(self.hass)
+                entity = entity_registry.async_get(self._modification_entry_id)
+                if entity is None:
+                    return self.async_abort(reason="entry_not_found")
+                self._modification_entry_name = _name_for_entity(entity)
 
         if self._modification_type == ModificationType.MERGE:
             return await self.async_step_merge_entry()
@@ -430,6 +355,7 @@ class DeviceToolsConfigFlow(ConfigFlow, domain=DOMAIN):
                 data_schema=_get_merge_schema(),
             )
 
+        merge_device_ids: list[str] = user_input.get(CONF_MERGE_DEVICE_IDS, [])
         self._modification_original_data = {
             merge_device_id: {
                 CONF_ENTITIES: [
@@ -440,11 +366,17 @@ class DeviceToolsConfigFlow(ConfigFlow, domain=DOMAIN):
                         include_disabled_entities=True,
                     )
                 ],
-                CONF_DISABLED_BY: dr.async_get(self.hass)
-                .async_get(merge_device_id)
-                .disabled_by,
+                CONF_DISABLED_BY: (
+                    merge_device.disabled_by
+                    if (
+                        merge_device := dr.async_get(self.hass).async_get(
+                            merge_device_id
+                        )
+                    )
+                    else None
+                ),
             }
-            for merge_device_id in user_input.get(CONF_MERGE_DEVICE_IDS, [])
+            for merge_device_id in merge_device_ids
         }
 
         return await self.async_step_merge_entry_options()
@@ -459,8 +391,6 @@ class DeviceToolsConfigFlow(ConfigFlow, domain=DOMAIN):
                 step_id="merge_entry_options",
                 data_schema=_get_options_schema(
                     self._modification_type,
-                    self._modification_entry_id,
-                    self._modification_entry_name,
                     self._modification_original_data,
                     self._modification_data,
                 ),
@@ -476,25 +406,29 @@ class DeviceToolsConfigFlow(ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Modify the entry."""
-        modification_original_data: dict[str, Any]
-        match self._modification_type:
-            case ModificationType.DEVICE:
-                device_registry = dr.async_get(self.hass)
-                device = device_registry.async_get(self._modification_entry_id)
+        if TYPE_CHECKING:
+            assert self._modification_entry_name is not None
 
-                if device:
-                    modification_original_data = device.dict_repr
-                else:
-                    modification_original_data = {}
+        if self._modification_entry_id:
+            modification_original_data: dict[str, Any]
+            match self._modification_type:
+                case ModificationType.DEVICE:
+                    device_registry = dr.async_get(self.hass)
+                    device = device_registry.async_get(self._modification_entry_id)
 
-            case ModificationType.ENTITY:
-                entity_registry = er.async_get(self.hass)
-                entity = entity_registry.async_get(self._modification_entry_id)
+                    if device:
+                        modification_original_data = device.dict_repr
+                    else:
+                        modification_original_data = {}
 
-                if entity is None:
-                    return self.async_abort(reason="entry_not_found")
+                case ModificationType.ENTITY:
+                    entity_registry = er.async_get(self.hass)
+                    entity = entity_registry.async_get(self._modification_entry_id)
 
-                modification_original_data = entity.extended_dict
+                    if entity is None:
+                        return self.async_abort(reason="entry_not_found")
+
+                    modification_original_data = entity.extended_dict()
 
         self._modification_original_data = {
             k: v
@@ -507,8 +441,6 @@ class DeviceToolsConfigFlow(ConfigFlow, domain=DOMAIN):
                 step_id="modify_entry",
                 data_schema=_get_options_schema(
                     self._modification_type,
-                    self._modification_entry_id,
-                    self._modification_entry_name,
                     self._modification_original_data,
                     {},
                 ),
@@ -524,6 +456,9 @@ class DeviceToolsConfigFlow(ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Finish the configuration flow."""
+        if TYPE_CHECKING:
+            assert self._modification_entry_id is not None
+            assert self._modification_entry_name is not None
 
         await self.async_set_unique_id(self._modification_entry_id)
         self._abort_if_unique_id_configured(updates=user_input)
@@ -561,10 +496,6 @@ class OptionsFlowHandler(OptionsFlow):
         modification_type: ModificationType = self.config_entry.data[
             CONF_MODIFICATION_TYPE
         ]
-        modification_entry_id: str = self.config_entry.data[CONF_MODIFICATION_ENTRY_ID]
-        modification_entry_name: str = self.config_entry.data[
-            CONF_MODIFICATION_ENTRY_NAME
-        ]
         modification_original_data: dict[str, Any] = self.config_entry.data[
             CONF_MODIFICATION_ORIGINAL_DATA
         ]
@@ -574,8 +505,6 @@ class OptionsFlowHandler(OptionsFlow):
 
         schema = _get_options_schema(
             modification_type,
-            modification_entry_id,
-            modification_entry_name,
             modification_original_data,
             modification_data,
         )

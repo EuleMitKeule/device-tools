@@ -1,8 +1,8 @@
 [project]
 name = "device-tools"
-authors = [{ name = "Lennard Beers", email = "l.beers@outlook.de"}]
-maintainers = [{ name = "Lennard Beers", email = "l.beers@outlook.de"}]
-license = {file = "LICENSE.md"}
+authors = [{ name = "Lennard Beers", email = "l.beers@outlook.de" }]
+maintainers = [{ name = "Lennard Beers", email = "l.beers@outlook.de" }]
+license = { file = "LICENSE.md" }
 keywords = [
     "homeassistant",
     "custom-component",
@@ -26,17 +26,10 @@ description = "A custom component for Home Assistant to create and modify device
 readme = "README.md"
 requires-python = ">=3.12"
 version = "0.0.0"
-dependencies = [
-    "homeassistant>=2024.12"
-]
+dependencies = ["homeassistant>=2024.12"]
 
 [dependency-groups]
-dev = [
-    "ruff",
-    "mypy",
-    "homeassistant-stubs",
-    "voluptuous-stubs",
-]
+dev = ["ruff", "mypy", "homeassistant-stubs", "voluptuous-stubs"]
 test = [
     "pytest>=8.3.3",
     "pytest-asyncio>=0.24.0",
@@ -53,7 +46,6 @@ Issues = "https://github.com/eulemitkeule/device-tools/issues"
 [tool.mypy]
 check_untyped_defs = true
 strict = true
-enable_incomplete_feature = "NewGenericSyntax"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

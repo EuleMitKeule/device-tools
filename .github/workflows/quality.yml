@@ -162,7 +162,6 @@ jobs:
             -Dsonar.python.version=${{ matrix.python-version }}
             -Dsonar.text.inclusions=**/*.py
 
-
   hacs:
     needs: cache
     runs-on: ubuntu-latest

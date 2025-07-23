@@ -2,7 +2,7 @@
 
 from abc import ABC, abstractmethod
 from types import MappingProxyType
-from typing import Any
+from typing import Any, cast
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -41,17 +41,17 @@ class Modification(ABC):
     @property
     def modification_type(self) -> ModificationType:
         """Return the modification type."""
-        return self._config_entry.data[CONF_MODIFICATION_TYPE]
+        return cast(ModificationType, self._config_entry.data[CONF_MODIFICATION_TYPE])
 
     @property
     def modification_entry_id(self) -> str:
         """Return the modification entry ID."""
-        return self._config_entry.data[CONF_MODIFICATION_ENTRY_ID]
+        return cast(str, self._config_entry.data[CONF_MODIFICATION_ENTRY_ID])
 
     @property
     def modification_entry_name(self) -> str:
         """Return the modification entry name."""
-        return self._config_entry.data[CONF_MODIFICATION_ENTRY_NAME]
+        return cast(str, self._config_entry.data[CONF_MODIFICATION_ENTRY_NAME])
 
     @property
     def modification_original_data(self) -> MappingProxyType[str, Any]:
