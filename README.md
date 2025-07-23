@@ -16,12 +16,7 @@ A custom Home Assistant integration that allows you to modify and interact with 
 
 > [!CAUTION]
 > This integration is still in development and has the potential to permanently modify your configuration in a bad way.
-
-## Known Issues
-
-* Some entities seem to not be configurable. (see [#4](https://github.com/EuleMitKeule/device-tools/issues/4) and [#6](https://github.com/EuleMitKeule/device-tools/issues/6))
-* Changing a modified virtual device's area requires a HA restart for the entities assigned to the device to reappear. (see [#20](https://github.com/EuleMitKeule/device-tools/issues/20))
-* Reverting certain modifications like assigning entities to virtual devices does not work in some situations. (see [#22](https://github.com/EuleMitKeule/device-tools/issues/20))
+> The stability will improve with the full release of `2.0.0`.
 
 ## Roadmap
 
