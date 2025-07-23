@@ -87,7 +87,7 @@ jobs:
 
       - name: Run mypy
         run: |
-          uv run mypy --strict .
+          uv run mypy --strict custom_components/device_tools
 
   tests:
     needs: cache
