@@ -2,55 +2,98 @@
     "config": {
         "abort": {
             "already_configured": "Device is already configured",
-            "device_not_found": "Device not found",
-            "device_disabled": "Device is disabled"
+            "entry_not_found": "Entry not found"
         },
-        "flow_title": "Add new modification",
         "step": {
             "user": {
                 "title": "Add new modification",
+                "description": "Select the type of modification to create",
                 "data": {
-                    "modification_name": "Name of the modification",
-                    "device_id": "Device (leave empty to create new device)"
+                    "modification_type": "Modification type"
+                },
+                "data_description": {
+                    "modification_type": "Choose whether to modify a device, entity, or merge devices"
                 }
             },
-            "device": {
-                "title": "Create new device",
+            "select_entry": {
+                "title": "Select entry to modify",
+                "description": "Select the device or entity you want to modify, or leave empty to create a new one",
                 "data": {
-                    "device_name": "Device Name"
+                    "modification_entry_id": "Entry"
+                }
+            },
+            "create_entry": {
+                "title": "Create new entry",
+                "description": "Enter a name for the new entry",
+                "data": {
+                    "modification_entry_name": "Entry name"
+                }
+            },
+            "merge_entry": {
+                "title": "Select devices to merge",
+                "description": "Select the devices you want to merge",
+                "data": {
+                    "merge_device_ids": "Devices to merge"
+                }
+            },
+            "merge_entry_options": {
+                "title": "Merge options",
+                "description": "Configure merge behavior",
+                "data": {
+                    "disable_merged_devices": "Disable merged devices"
+                },
+                "data_description": {
+                    "disable_merged_devices": "Automatically disable devices after merging them"
+                }
+            },
+            "modify_entry": {
+                "title": "Modify entry",
+                "description": "Configure the entry attributes",
+                "data": {
+                    "manufacturer": "Manufacturer",
+                    "model": "Model",
+                    "sw_version": "Software version",
+                    "hw_version": "Hardware version",
+                    "serial_number": "Serial number",
+                    "via_device_id": "Via device",
+                    "device_id": "Device"
+                },
+                "data_description": {
+                    "manufacturer": "The manufacturer of the device",
+                    "model": "The model of the device",
+                    "sw_version": "The software version of the device",
+                    "hw_version": "The hardware version of the device",
+                    "serial_number": "The serial number of the device",
+                    "via_device_id": "The device this device is connected through",
+                    "device_id": "The device this entity belongs to"
                 }
             }
         }
     },
     "options": {
-        "abort": {
-            "device_not_found": "Device not found",
-            "device_disabled": "Device is disabled",
-            "device_already_merged": "Device is already merged",
-            "device_in_use": "Device is in use by another modification"
-        },
         "step": {
-            "attributes": {
-                "title": "Configure device attributes",
+            "init": {
+                "title": "Modify entry",
+                "description": "Update the entry attributes",
                 "data": {
                     "manufacturer": "Manufacturer",
                     "model": "Model",
-                    "via_device_id": "Via device ID",
                     "sw_version": "Software version",
                     "hw_version": "Hardware version",
-                    "serial_number": "Serial number"
-                }
-            },
-            "entities": {
-                "title": "Configure device entities",
-                "data": {
-                    "entities": "Entities"
-                }
-            },
-            "merge": {
-                "title": "Merge devices",
-                "data": {
-                    "devices": "Devices to merge"
+                    "serial_number": "Serial number",
+                    "via_device_id": "Via device",
+                    "device_id": "Device",
+                    "disable_merged_devices": "Disable merged devices"
+                },
+                "data_description": {
+                    "manufacturer": "The manufacturer of the device",
+                    "model": "The model of the device",
+                    "sw_version": "The software version of the device",
+                    "hw_version": "The hardware version of the device",
+                    "serial_number": "The serial number of the device",
+                    "via_device_id": "The device this device is connected through",
+                    "device_id": "The device this entity belongs to",
+                    "disable_merged_devices": "Automatically disable devices after merging them"
                 }
             }
         }

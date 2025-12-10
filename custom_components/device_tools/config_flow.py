@@ -6,6 +6,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 import voluptuous as vol
+
 from homeassistant.config_entries import (
     ConfigEntry,
     ConfigFlow,
@@ -13,9 +14,7 @@ from homeassistant.config_entries import (
     OptionsFlow,
 )
 from homeassistant.core import callback
-from homeassistant.helpers import device_registry as dr
-from homeassistant.helpers import entity_registry as er
-from homeassistant.helpers import selector
+from homeassistant.helpers import device_registry as dr, entity_registry as er, selector
 
 from .const import (
     CONF_DEVICE_ID,
@@ -428,7 +427,7 @@ class DeviceToolsConfigFlow(ConfigFlow, domain=DOMAIN):
                     if entity is None:
                         return self.async_abort(reason="entry_not_found")
 
-                    modification_original_data = entity.extended_dict()
+                    modification_original_data = entity.extended_dict
 
         self._modification_original_data = {
             k: v

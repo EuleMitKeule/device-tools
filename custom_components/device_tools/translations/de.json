@@ -1,56 +1,99 @@
 {
     "config": {
         "abort": {
-            "already_configured": "Das Gerät ist bereits konfiguriert.",
-            "device_not_found": "Das Gerät konnte nicht gefunden werden.",
-            "device_disabled": "Das Gerät ist deaktiviert."
+            "already_configured": "Gerät ist bereits konfiguriert",
+            "entry_not_found": "Eintrag nicht gefunden"
         },
-        "flow_title": "Füge eine neue Modifikation hinzu",
         "step": {
             "user": {
-                "title": "Füge eine neue Modifikation hinzu",
+                "title": "Neue Modifikation hinzufügen",
+                "description": "Wähle den Typ der Modifikation aus",
                 "data": {
-                    "modification_name": "Name der Modifikation",
-                    "device_id": "Gerät (leer lassen um ein neues Gerät anzulegen)"
+                    "modification_type": "Modifikationstyp"
+                },
+                "data_description": {
+                    "modification_type": "Wähle aus, ob ein Gerät oder eine Entität modifiziert oder Geräte zusammengeführt werden sollen"
                 }
             },
-            "device": {
-                "title": "Neues Gerät erstellen",
+            "select_entry": {
+                "title": "Eintrag zum Ändern auswählen",
+                "description": "Wähle das Gerät oder die Entität aus, die du ändern möchtest, oder lasse das Feld leer, um einen neuen Eintrag zu erstellen",
                 "data": {
-                    "device_name": "Gerätename"
+                    "modification_entry_id": "Eintrag"
+                }
+            },
+            "create_entry": {
+                "title": "Neuen Eintrag erstellen",
+                "description": "Gib einen Namen für den neuen Eintrag ein",
+                "data": {
+                    "modification_entry_name": "Eintragsname"
+                }
+            },
+            "merge_entry": {
+                "title": "Geräte zum Zusammenführen auswählen",
+                "description": "Wähle die Geräte aus, die zusammengeführt werden sollen",
+                "data": {
+                    "merge_device_ids": "Geräte zum Zusammenführen"
+                }
+            },
+            "merge_entry_options": {
+                "title": "Optionen zum Zusammenführen",
+                "description": "Verhalten beim Zusammenführen konfigurieren",
+                "data": {
+                    "disable_merged_devices": "Zusammengeführte Geräte deaktivieren"
+                },
+                "data_description": {
+                    "disable_merged_devices": "Geräte nach dem Zusammenführen automatisch deaktivieren"
+                }
+            },
+            "modify_entry": {
+                "title": "Eintrag ändern",
+                "description": "Eintragsattribute konfigurieren",
+                "data": {
+                    "manufacturer": "Hersteller",
+                    "model": "Modell",
+                    "sw_version": "Softwareversion",
+                    "hw_version": "Hardwareversion",
+                    "serial_number": "Seriennummer",
+                    "via_device_id": "Übergeordnetes Gerät",
+                    "device_id": "Gerät"
+                },
+                "data_description": {
+                    "manufacturer": "Der Hersteller des Geräts",
+                    "model": "Das Modell des Geräts",
+                    "sw_version": "Die Softwareversion des Geräts",
+                    "hw_version": "Die Hardwareversion des Geräts",
+                    "serial_number": "Die Seriennummer des Geräts",
+                    "via_device_id": "Das Gerät, über das dieses Gerät verbunden ist",
+                    "device_id": "Das Gerät, zu dem diese Entität gehört"
                 }
             }
         }
     },
     "options": {
-        "abort": {
-            "device_not_found": "Das Gerät konnte nicht gefunden werden.",
-            "device_disabled": "Das Gerät ist deaktiviert.",
-            "device_already_merged": "Das Gerät wurde bereits zusammengeführt.",
-            "device_in_use": "Das Gerät wird bereits von einer anderen Modifikation verwendet."
-        },
         "step": {
-            "attributes": {
-                "title": "Konfiguriere Geräteattribute",
+            "init": {
+                "title": "Eintrag ändern",
+                "description": "Eintragsattribute aktualisieren",
                 "data": {
                     "manufacturer": "Hersteller",
                     "model": "Modell",
-                    "via_device_id": "Übergeordnete Geräte-ID",
                     "sw_version": "Softwareversion",
                     "hw_version": "Hardwareversion",
-                    "serial_number": "Seriennummer"
-                }
-            },
-            "entities": {
-                "title": "Konfiguriere Entitäten eines Gerätes",
-                "data": {
-                    "entities": "Entitäten"
-                }
-            },
-            "merge": {
-                "title": "Führe Geräte zusammen",
-                "data": {
-                    "devices": "Geräte zum Zusammenführen"
+                    "serial_number": "Seriennummer",
+                    "via_device_id": "Übergeordnetes Gerät",
+                    "device_id": "Gerät",
+                    "disable_merged_devices": "Zusammengeführte Geräte deaktivieren"
+                },
+                "data_description": {
+                    "manufacturer": "Der Hersteller des Geräts",
+                    "model": "Das Modell des Geräts",
+                    "sw_version": "Die Softwareversion des Geräts",
+                    "hw_version": "Die Hardwareversion des Geräts",
+                    "serial_number": "Die Seriennummer des Geräts",
+                    "via_device_id": "Das Gerät, über das dieses Gerät verbunden ist",
+                    "device_id": "Das Gerät, zu dem diese Entität gehört",
+                    "disable_merged_devices": "Geräte nach dem Zusammenführen automatisch deaktivieren"
                 }
             }
         }
