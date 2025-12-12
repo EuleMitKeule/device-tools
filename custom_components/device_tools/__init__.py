@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from homeassistant.config_entries import SOURCE_USER, ConfigEntry, ConfigEntryState
+from homeassistant.config_entries import SOURCE_USER, ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import (
     config_validation as cv,
@@ -24,6 +24,7 @@ from .const import (
     CONF_MODIFICATION_ENTRY_ID,
     CONF_MODIFICATION_ENTRY_NAME,
     CONF_MODIFICATION_IS_CUSTOM_ENTRY,
+    CONF_MODIFICATION_ORIGINAL_DATA,
     CONF_MODIFICATION_TYPE,
     CONF_SERIAL_NUMBER,
     CONF_SW_VERSION,
@@ -174,156 +175,48 @@ async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) ->
     entity_registry = er.async_get(hass)
 
     if config_entry.version == 1:
-        # Handle device attribute modifications
-        if "device_id" in config_entry.data:
-            device = device_registry.async_get(config_entry.data["device_id"])
-
-            if not device:
-                _LOGGER.warning(
-                    "Device with ID %s not found, removing Device Tools config entry %s",
-                    config_entry.data["device_id"],
-                    config_entry.entry_id,
-                )
-                hass.async_create_task(
-                    hass.config_entries.async_remove(config_entry.entry_id)
-                )
-                return False
-
-            new_data = {
-                CONF_MODIFICATION_TYPE: ModificationType.DEVICE,
-                CONF_MODIFICATION_ENTRY_ID: device.id,
-                CONF_MODIFICATION_ENTRY_NAME: device.name_by_user
-                or device.name
-                or device.id,
-                CONF_MODIFICATION_IS_CUSTOM_ENTRY: False,
-            }
-            new_options: dict[str, Any] = {}
-
-            # Migrate attribute modifications to new format
-            if "attribute_modification" in config_entry.data:
-                modification_data = {}
-                for old_key, new_key in [
-                    ("manufacturer", CONF_MANUFACTURER),
-                    ("model", CONF_MODEL),
-                    ("sw_version", CONF_SW_VERSION),
-                    ("hw_version", CONF_HW_VERSION),
-                    ("serial_number", CONF_SERIAL_NUMBER),
-                    ("via_device_id", CONF_VIA_DEVICE_ID),
-                ]:
-                    if old_key in config_entry.data["attribute_modification"]:
-                        modification_data[new_key] = config_entry.data[
-                            "attribute_modification"
-                        ][old_key]
-
-                if modification_data:
-                    new_options[CONF_MODIFICATION_DATA] = modification_data
-
-            new_title = (
-                device.name_by_user or device.name or device.id or "Unknown Device"
+        # Old format has all data nested under "device_modification"
+        if "device_modification" not in config_entry.data:
+            _LOGGER.warning(
+                "Config entry %s has unexpected structure, cannot migrate",
+                config_entry.entry_id,
             )
+            return False
 
-            hass.config_entries.async_update_entry(
-                config_entry,
-                data=new_data,
-                options=new_options,
-                title=new_title,
-                unique_id=device.id,
-                version=2,
-                minor_version=1,
-            )
+        old_data = config_entry.data["device_modification"]
+        device_id = old_data.get("device_id")
+        attribute_modification = old_data.get("attribute_modification")
+        entity_modification = old_data.get("entity_modification")
+        merge_modification = old_data.get("merge_modification")
 
-        # Handle entity modifications - create separate config entries
-        if "entity_modification" in config_entry.data:
-            entities_data = config_entry.data["entity_modification"]
-            target_device_id = entities_data.get("device_id")
+        # Determine the type of modification and handle accordingly
+        if merge_modification:
+            # Handle merge modifications
+            merge_devices = merge_modification.get("devices", [])
+            # The primary device_id plus the devices to merge
+            all_device_ids = [device_id, *merge_devices] if device_id else merge_devices
 
-            for entity_id in entities_data.get("entities", []):
-                entity = entity_registry.async_get(entity_id)
-
-                if not entity:
-                    _LOGGER.warning(
-                        "Entity %s not found, skipping migration of entity modification in config entry %s",
-                        entity_id,
-                        config_entry.entry_id,
-                    )
-                    continue
-
-                new_data = {
-                    CONF_MODIFICATION_TYPE: ModificationType.ENTITY,
-                    CONF_MODIFICATION_ENTRY_ID: entity.id,
-                    CONF_MODIFICATION_ENTRY_NAME: (
-                        entity.name or entity.original_name or entity.entity_id
-                    ),
-                    CONF_MODIFICATION_IS_CUSTOM_ENTRY: False,
-                }
-                new_options: dict[str, Any] = {}
-
-                # Add device assignment if specified
-                if target_device_id:
-                    new_options[CONF_MODIFICATION_DATA] = {
-                        CONF_DEVICE_ID: target_device_id,
-                    }
-
-                new_title = (
-                    entity.name
-                    or entity.original_name
-                    or entity.entity_id
-                    or "Unknown Entity"
-                )
-
-                # Create new config entry for this entity modification
-                result = await hass.config_entries.flow.async_init(
-                    DOMAIN,
-                    context={"source": SOURCE_USER},
-                    data=new_data,
-                )
-
-                if result.get("type") == "create_entry":
-                    _LOGGER.debug(
-                        "Created new config entry for entity %s during migration",
-                        entity_id,
-                    )
-                    # Update the new entry with options
-                    if new_options and (result_entry := result.get("result")):
-                        new_entry = hass.config_entries.async_get_entry(
-                            result_entry.entry_id
-                        )
-                        if new_entry:
-                            hass.config_entries.async_update_entry(
-                                new_entry,
-                                options=new_options,
-                                title=new_title,
-                                unique_id=entity.id,
-                                version=2,
-                                minor_version=1,
-                            )
-
-            # Remove the original config entry if it was only for entity modifications
-            if "device_id" not in config_entry.data:
-                _LOGGER.debug(
-                    "Removing original entity-only config entry %s after migration",
-                    config_entry.entry_id,
-                )
-                hass.async_create_task(
-                    hass.config_entries.async_remove(config_entry.entry_id)
-                )
-                return True
-
-        # Handle merge modifications
-        if "merge_modification" in config_entry.data:
-            merge_data = config_entry.data["merge_modification"]
-            device_ids = merge_data.get("device_ids", [])
-
-            # Verify all devices exist
+            # Verify all devices exist and collect original data
             valid_devices = []
-            for device_id in device_ids:
-                device = device_registry.async_get(device_id)
+            original_data = {}
+            for dev_id in all_device_ids:
+                device = device_registry.async_get(dev_id)
                 if device:
-                    valid_devices.append(device_id)
+                    valid_devices.append(dev_id)
+                    # Store original device data
+                    original_data[dev_id] = {
+                        "name": device.name_by_user or device.name,
+                        "manufacturer": device.manufacturer,
+                        "model": device.model,
+                        "sw_version": device.sw_version,
+                        "hw_version": device.hw_version,
+                        "serial_number": device.serial_number,
+                        "via_device_id": device.via_device_id,
+                    }
                 else:
                     _LOGGER.warning(
                         "Device %s not found during merge modification migration",
-                        device_id,
+                        dev_id,
                     )
 
             if len(valid_devices) < 2:
@@ -338,18 +231,20 @@ async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) ->
 
             # Get a name for the merged device
             primary_device = device_registry.async_get(valid_devices[0])
-            if primary_device and primary_device.name_by_user:
-                merge_name = primary_device.name_by_user
-            elif primary_device and primary_device.name:
-                merge_name = primary_device.name
-            else:
-                merge_name = f"Merged Device {valid_devices[0][:8]}"
+            primary_device_name = "Unknown"
+            if primary_device:
+                if primary_device.name_by_user:
+                    primary_device_name = primary_device.name_by_user
+                elif primary_device.name:
+                    primary_device_name = primary_device.name
+            merge_name = f"Merge into {primary_device_name}"
 
             new_data = {
                 CONF_MODIFICATION_TYPE: ModificationType.MERGE,
-                CONF_MODIFICATION_ENTRY_ID: valid_devices[0],  # Primary device
+                CONF_MODIFICATION_ENTRY_ID: config_entry.entry_id,  # Placeholder, will be updated in setup
                 CONF_MODIFICATION_ENTRY_NAME: merge_name,
                 CONF_MODIFICATION_IS_CUSTOM_ENTRY: True,  # Creates a new device
+                CONF_MODIFICATION_ORIGINAL_DATA: original_data,
             }
             new_options = {
                 CONF_MODIFICATION_DATA: {
@@ -366,6 +261,159 @@ async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) ->
                 version=2,
                 minor_version=1,
             )
+
+        elif entity_modification:
+            # Handle entity modifications
+            # In v2, we can only handle one entity per config entry
+            # So we migrate the first entity and remove this entry
+            target_device_id = device_id  # This is the device to assign entities to
+            entity_ids = entity_modification.get("entities", [])
+
+            if not entity_ids:
+                _LOGGER.warning(
+                    "Entity modification config entry %s has no entities, removing",
+                    config_entry.entry_id,
+                )
+                hass.async_create_task(
+                    hass.config_entries.async_remove(config_entry.entry_id)
+                )
+                return False
+
+            # Migrate to the first valid entity only
+            first_entity = None
+            for entity_id in entity_ids:
+                entity = entity_registry.async_get(entity_id)
+                if entity:
+                    first_entity = entity
+                    break
+
+            if not first_entity:
+                _LOGGER.warning(
+                    "No valid entities found in config entry %s, removing",
+                    config_entry.entry_id,
+                )
+                hass.async_create_task(
+                    hass.config_entries.async_remove(config_entry.entry_id)
+                )
+                return False
+
+            new_data = {
+                CONF_MODIFICATION_TYPE: ModificationType.ENTITY,
+                CONF_MODIFICATION_ENTRY_ID: first_entity.id,
+                CONF_MODIFICATION_ENTRY_NAME: (
+                    first_entity.name
+                    or first_entity.original_name
+                    or first_entity.entity_id
+                ),
+                CONF_MODIFICATION_IS_CUSTOM_ENTRY: False,
+                CONF_MODIFICATION_ORIGINAL_DATA: {},
+            }
+            modification_data = {}
+
+            # Add device assignment if specified
+            if target_device_id:
+                modification_data[CONF_DEVICE_ID] = target_device_id
+
+            new_options = {
+                CONF_MODIFICATION_DATA: modification_data,
+            }
+
+            new_title = (
+                first_entity.name
+                or first_entity.original_name
+                or first_entity.entity_id
+                or "Unknown Entity"
+            )
+
+            hass.config_entries.async_update_entry(
+                config_entry,
+                data=new_data,
+                options=new_options,
+                title=new_title,
+                unique_id=first_entity.id,
+                version=2,
+                minor_version=1,
+            )
+
+            # Log warning if there were multiple entities
+            if len(entity_ids) > 1:
+                _LOGGER.warning(
+                    "Entity modification config entry %s had %d entities, only migrated the first one (%s). "
+                    "Please manually add the remaining entities through the UI",
+                    config_entry.entry_id,
+                    len(entity_ids),
+                    first_entity.entity_id,
+                )
+
+        elif device_id:
+            # Handle device modifications (with or without attribute modifications)
+            device = device_registry.async_get(device_id)
+
+            if not device:
+                _LOGGER.warning(
+                    "Device with ID %s not found, removing Device Tools config entry %s",
+                    device_id,
+                    config_entry.entry_id,
+                )
+                hass.async_create_task(
+                    hass.config_entries.async_remove(config_entry.entry_id)
+                )
+                return False
+
+            new_data = {
+                CONF_MODIFICATION_TYPE: ModificationType.DEVICE,
+                CONF_MODIFICATION_ENTRY_ID: device.id,
+                CONF_MODIFICATION_ENTRY_NAME: device.name_by_user
+                or device.name
+                or device.id,
+                CONF_MODIFICATION_IS_CUSTOM_ENTRY: False,
+                CONF_MODIFICATION_ORIGINAL_DATA: {},
+            }
+            modification_data = {}
+
+            # Migrate attribute modifications to new format
+            if attribute_modification:
+                for old_key, new_key in [
+                    ("manufacturer", CONF_MANUFACTURER),
+                    ("model", CONF_MODEL),
+                    ("sw_version", CONF_SW_VERSION),
+                    ("hw_version", CONF_HW_VERSION),
+                    ("serial_number", CONF_SERIAL_NUMBER),
+                    ("via_device_id", CONF_VIA_DEVICE_ID),
+                ]:
+                    if old_key in attribute_modification:
+                        value = attribute_modification[old_key]
+                        # Only include non-null values
+                        if value is not None:
+                            modification_data[new_key] = value
+
+            new_options = {
+                CONF_MODIFICATION_DATA: modification_data,
+            }
+
+            new_title = (
+                device.name_by_user or device.name or device.id or "Unknown Device"
+            )
+
+            hass.config_entries.async_update_entry(
+                config_entry,
+                data=new_data,
+                options=new_options,
+                title=new_title,
+                unique_id=device.id,
+                version=2,
+                minor_version=1,
+            )
+
+        else:
+            _LOGGER.warning(
+                "Config entry %s has no recognizable modification data, removing",
+                config_entry.entry_id,
+            )
+            hass.async_create_task(
+                hass.config_entries.async_remove(config_entry.entry_id)
+            )
+            return False
 
     _LOGGER.info(
         "Successfully migrated Device Tools config entry %s to v2.1",
