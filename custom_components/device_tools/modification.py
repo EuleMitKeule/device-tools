@@ -9,11 +9,8 @@ from homeassistant.core import HomeAssistant
 
 from .const import (
     CONF_MODIFICATION_DATA,
-    CONF_MODIFICATION_ENTRY_ID,
     CONF_MODIFICATION_ENTRY_NAME,
-    CONF_MODIFICATION_ORIGINAL_DATA,
     CONF_MODIFICATION_TYPE,
-    MODIFIABLE_ATTRIBUTES,
     ModificationType,
 )
 
@@ -25,10 +22,12 @@ class Modification(ABC):
         self,
         hass: HomeAssistant,
         config_entry: ConfigEntry,
+        modification_entry_data: MappingProxyType[str, Any] | None = None,
     ) -> None:
         """Initialize the modification."""
         self._hass = hass
         self._config_entry: ConfigEntry = config_entry
+        self._modification_entry_data = modification_entry_data
 
     @abstractmethod
     async def apply(self) -> None:
@@ -44,48 +43,13 @@ class Modification(ABC):
         return cast(ModificationType, self._config_entry.data[CONF_MODIFICATION_TYPE])
 
     @property
-    def modification_entry_id(self) -> str:
-        """Return the modification entry ID."""
-        return cast(str, self._config_entry.data[CONF_MODIFICATION_ENTRY_ID])
-
-    @property
     def modification_entry_name(self) -> str:
         """Return the modification entry name."""
         return cast(str, self._config_entry.data[CONF_MODIFICATION_ENTRY_NAME])
 
     @property
-    def modification_original_data(self) -> MappingProxyType[str, Any]:
-        """Return the original data before modification."""
-        return MappingProxyType(
-            self._config_entry.data[CONF_MODIFICATION_ORIGINAL_DATA]
-        )
-
-    @property
     def modification_data(self) -> MappingProxyType[str, Any]:
         """Return the modification data."""
+        if self._modification_entry_data is not None:
+            return self._modification_entry_data
         return MappingProxyType(self._config_entry.options[CONF_MODIFICATION_DATA])
-
-    @property
-    def _overwritten_original_data(self) -> MappingProxyType[str, Any]:
-        """Return relevant original data."""
-        return MappingProxyType(
-            {
-                key: value
-                for key, value in self.modification_original_data.items()
-                if key in self.modification_data
-            }
-        )
-
-    def _update_modification_original_data(self, data: dict[str, Any]) -> None:
-        """Update the original data in the config entry."""
-        self._hass.config_entries.async_update_entry(
-            self._config_entry,
-            data={
-                **self._config_entry.data,
-                CONF_MODIFICATION_ORIGINAL_DATA: {
-                    k: v
-                    for k, v in data.items()
-                    if k in MODIFIABLE_ATTRIBUTES[self.modification_type]
-                },
-            },
-        )

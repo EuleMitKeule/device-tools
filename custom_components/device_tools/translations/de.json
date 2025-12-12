@@ -4,6 +4,11 @@
             "already_configured": "Gerät ist bereits konfiguriert",
             "entry_not_found": "Eintrag nicht gefunden"
         },
+        "error": {
+            "cannot_merge_into_itself": "Ein Gerät kann nicht mit sich selbst zusammengeführt werden",
+            "entity_in_merge": "Diese Entität ist bereits Teil einer Zusammenführungsmodifikation und kann nicht separat geändert werden",
+            "entity_has_modification": "Eines oder mehrere Geräte, die zusammengeführt werden sollen, haben Entitäten, die bereits Teil einer Entitätsmodifikation sind"
+        },
         "step": {
             "user": {
                 "title": "Neue Modifikation hinzufügen",
@@ -67,6 +72,15 @@
                     "via_device_id": "Das Gerät, über das dieses Gerät verbunden ist",
                     "device_id": "Das Gerät, zu dem diese Entität gehört"
                 }
+            }
+        }
+    },
+    "selector": {
+        "modification_type": {
+            "options": {
+                "device": "Gerät",
+                "entity": "Entität",
+                "merge": "Zusammenführen"
             }
         }
     },

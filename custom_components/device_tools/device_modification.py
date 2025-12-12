@@ -1,14 +1,21 @@
 """Class to handle a device modification."""
 
+from collections.abc import Callable
+import logging
+from types import MappingProxyType
+from typing import Any
+
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import Event, HomeAssistant
 from homeassistant.helpers import device_registry as dr
 
 from .device_listener import DeviceListener
-from .modification import Modification
+from .entry_modification import EntryModification
+
+_LOGGER = logging.getLogger(__name__)
 
 
-class DeviceModification(Modification):
+class DeviceModification(EntryModification):
     """Class to handle a device modification."""
 
     def __init__(
@@ -16,11 +23,27 @@ class DeviceModification(Modification):
         hass: HomeAssistant,
         config_entry: ConfigEntry,
         listener: DeviceListener,
+        modification_entry_id: str | None = None,
+        modification_entry_data: MappingProxyType[str, Any] | None = None,
+        modification_original_data: MappingProxyType[str, Any] | None = None,
+        func_get_modification_original_data: Callable[
+            [ConfigEntry], MappingProxyType[str, Any]
+        ]
+        | None = None,
+        func_update_modification_original_data: Callable[
+            [ConfigEntry, dict[str, Any]], None
+        ]
+        | None = None,
     ) -> None:
         """Initialize the modification."""
         super().__init__(
             hass=hass,
             config_entry=config_entry,
+            modification_entry_id=modification_entry_id,
+            modification_entry_data=modification_entry_data,
+            modification_original_data=modification_original_data,
+            func_get_modification_original_data=func_get_modification_original_data,
+            func_update_modification_original_data=func_update_modification_original_data,
         )
 
         self._registry = dr.async_get(hass)
@@ -36,6 +59,11 @@ class DeviceModification(Modification):
         self._listener.unregister_callback(
             self.modification_entry_id,
             self._on_entry_updated,
+        )
+        _LOGGER.debug(
+            "Applying device modification %s with data: %s",
+            self.modification_entry_id,
+            self.modification_data,
         )
         self._registry.async_update_device(
             self.modification_entry_id,

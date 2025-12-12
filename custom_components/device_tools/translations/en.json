@@ -4,6 +4,11 @@
             "already_configured": "Device is already configured",
             "entry_not_found": "Entry not found"
         },
+        "error": {
+            "cannot_merge_into_itself": "Cannot merge a device into itself",
+            "entity_has_modification": "One or more entities on the devices being merged already have entity modifications. Please remove those modifications first",
+            "entity_in_merge": "This entity is already part of a merge modification. Please remove the merge modification first"
+        },
         "step": {
             "user": {
                 "title": "Add new modification",
@@ -67,6 +72,15 @@
                     "via_device_id": "The device this device is connected through",
                     "device_id": "The device this entity belongs to"
                 }
+            }
+        }
+    },
+    "selector": {
+        "modification_type": {
+            "options": {
+                "device": "Device",
+                "entity": "Entity",
+                "merge": "Merge"
             }
         }
     },

@@ -21,8 +21,7 @@ CONF_DEVICE_ID = "device_id"
 
 CONF_MERGE_DEVICE_IDS = "merge_device_ids"
 CONF_ENTITIES = "entities"
-CONF_DISABLED_BY = "disabled_by"
-CONF_DISABLE_MERGED_DEVICES = "disable_merged_devices"
+CONF_ORIGINAL_DATA = "original_data"
 
 
 class ModificationType(StrEnum):

@@ -13,13 +13,11 @@ from homeassistant.config_entries import (
     ConfigFlowResult,
     OptionsFlow,
 )
-from homeassistant.core import callback
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr, entity_registry as er, selector
 
 from .const import (
     CONF_DEVICE_ID,
-    CONF_DISABLE_MERGED_DEVICES,
-    CONF_DISABLED_BY,
     CONF_ENTITIES,
     CONF_HW_VERSION,
     CONF_MANUFACTURER,
@@ -31,6 +29,7 @@ from .const import (
     CONF_MODIFICATION_IS_CUSTOM_ENTRY,
     CONF_MODIFICATION_ORIGINAL_DATA,
     CONF_MODIFICATION_TYPE,
+    CONF_ORIGINAL_DATA,
     CONF_SERIAL_NUMBER,
     CONF_SW_VERSION,
     CONF_VIA_DEVICE_ID,
@@ -40,6 +39,36 @@ from .const import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _is_entity_in_merge_modification(
+    hass: HomeAssistant,
+    entity_id: str,
+) -> bool:
+    """Check if an entity is already part of a merge modification."""
+    for entry in hass.config_entries.async_entries(DOMAIN):
+        if entry.data.get(CONF_MODIFICATION_TYPE) == ModificationType.MERGE:
+            original_data = entry.data.get(CONF_MODIFICATION_ORIGINAL_DATA, {})
+            for device_data in original_data.values():
+                entities = device_data.get(CONF_ENTITIES, {})
+                if entity_id in entities:
+                    return True
+    return False
+
+
+def _check_merge_conflicts(
+    hass: HomeAssistant,
+    merge_device_ids: list[str],
+) -> bool:
+    """Check if any entities on devices being merged have entity modifications."""
+    for entry in hass.config_entries.async_entries(DOMAIN):
+        if entry.data.get(CONF_MODIFICATION_TYPE) == ModificationType.ENTITY:
+            original_data = entry.data.get(CONF_MODIFICATION_ORIGINAL_DATA, {})
+            original_device_id = original_data.get(CONF_DEVICE_ID)
+
+            if original_device_id in merge_device_ids:
+                return True
+    return False
 
 
 def _get_device_options_schema(
@@ -109,8 +138,8 @@ def _get_device_options_schema(
 
 
 def _get_entity_options_schema(
-    modification_original_data: dict[str, Any],
     modification_data: dict[str, Any],
+    modification_original_data: dict[str, Any],
 ) -> vol.Schema:
     """Return the schema for an entity modification."""
     return vol.Schema(
@@ -131,24 +160,6 @@ def _get_entity_options_schema(
     )
 
 
-def _get_merge_options_schema(
-    modification_data: dict[str, Any],
-) -> vol.Schema:
-    """Return the schema for a merge modification."""
-    return vol.Schema(
-        {
-            vol.Required(
-                CONF_DISABLE_MERGED_DEVICES,
-                description={
-                    "suggested_value": modification_data.get(
-                        CONF_DISABLE_MERGED_DEVICES, True
-                    ),
-                },
-            ): bool,
-        }
-    )
-
-
 def _get_options_schema(
     modification_type: ModificationType,
     modification_original_data: dict[str, Any] | None,
@@ -158,18 +169,16 @@ def _get_options_schema(
     match modification_type:
         case ModificationType.DEVICE:
             return _get_device_options_schema(
-                modification_original_data or {},
                 modification_data,
+                modification_original_data or {},
             )
         case ModificationType.ENTITY:
             return _get_entity_options_schema(
-                modification_original_data or {},
                 modification_data,
+                modification_original_data or {},
             )
         case ModificationType.MERGE:
-            return _get_merge_options_schema(
-                modification_data,
-            )
+            return vol.Schema({})
 
 
 def _get_merge_schema() -> vol.Schema:
@@ -355,49 +364,49 @@ class DeviceToolsConfigFlow(ConfigFlow, domain=DOMAIN):
             )
 
         merge_device_ids: list[str] = user_input.get(CONF_MERGE_DEVICE_IDS, [])
+
+        if self._modification_entry_id in merge_device_ids:
+            return self.async_show_form(
+                step_id="merge_entry",
+                data_schema=_get_merge_schema(),
+                errors={"base": "cannot_merge_into_itself"},
+            )
+
+        if _check_merge_conflicts(self.hass, merge_device_ids):
+            return self.async_show_form(
+                step_id="merge_entry",
+                data_schema=_get_merge_schema(),
+                errors={"base": "entity_has_modification"},
+            )
+
+        device_registry = dr.async_get(self.hass)
+        entity_registry = er.async_get(self.hass)
+
+        for merge_device_id in merge_device_ids:
+            device = device_registry.async_get(merge_device_id)
+            if device is None:
+                return self.async_abort(reason="entry_not_found")
+
+            device_original_data = device.dict_repr
+
         self._modification_original_data = {
             merge_device_id: {
-                CONF_ENTITIES: [
-                    merge_entity_entry.id
-                    for merge_entity_entry in er.async_entries_for_device(
-                        er.async_get(self.hass),
+                CONF_ENTITIES: {
+                    entity.entity_id: entity.extended_dict
+                    for entity in er.async_entries_for_device(
+                        entity_registry,
                         merge_device_id,
                         include_disabled_entities=True,
                     )
-                ],
-                CONF_DISABLED_BY: (
-                    merge_device.disabled_by
-                    if (
-                        merge_device := dr.async_get(self.hass).async_get(
-                            merge_device_id
-                        )
-                    )
-                    else None
-                ),
+                },
+                CONF_ORIGINAL_DATA: {
+                    k: v
+                    for k, v in device_original_data.items()
+                    if k in MODIFIABLE_ATTRIBUTES[ModificationType.DEVICE]
+                },
             }
             for merge_device_id in merge_device_ids
         }
-
-        return await self.async_step_merge_entry_options()
-
-    async def async_step_merge_entry_options(
-        self,
-        user_input: dict[str, Any] | None = None,
-    ) -> ConfigFlowResult:
-        """Merge entries."""
-        if user_input is None:
-            return self.async_show_form(
-                step_id="merge_entry_options",
-                data_schema=_get_options_schema(
-                    self._modification_type,
-                    self._modification_original_data,
-                    self._modification_data,
-                ),
-            )
-
-        self._modification_data[CONF_DISABLE_MERGED_DEVICES] = user_input.get(
-            CONF_DISABLE_MERGED_DEVICES, True
-        )
 
         return await self.async_step_finish()
 
@@ -426,6 +435,19 @@ class DeviceToolsConfigFlow(ConfigFlow, domain=DOMAIN):
 
                     if entity is None:
                         return self.async_abort(reason="entry_not_found")
+
+                    if _is_entity_in_merge_modification(
+                        self.hass, self._modification_entry_id
+                    ):
+                        return self.async_show_form(
+                            step_id="modify_entry",
+                            data_schema=_get_options_schema(
+                                self._modification_type,
+                                {},
+                                {},
+                            ),
+                            errors={"base": "entity_in_merge"},
+                        )
 
                     modification_original_data = entity.extended_dict
 
@@ -459,7 +481,8 @@ class DeviceToolsConfigFlow(ConfigFlow, domain=DOMAIN):
             assert self._modification_entry_id is not None
             assert self._modification_entry_name is not None
 
-        await self.async_set_unique_id(self._modification_entry_id)
+        unique_id = f"{self._modification_type}_{self._modification_entry_id}"
+        await self.async_set_unique_id(unique_id)
         self._abort_if_unique_id_configured(updates=user_input)
 
         return self.async_create_entry(
@@ -520,6 +543,8 @@ class OptionsFlowHandler(OptionsFlow):
                 modification_original_data,
                 modification_type,
             )
+        elif modification_type == ModificationType.MERGE:
+            modification_data = {}
 
         return self.async_create_entry(
             data={CONF_MODIFICATION_DATA: modification_data},
