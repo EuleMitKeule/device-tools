@@ -33,7 +33,7 @@ jobs:
           enable-cache: true
           cache-suffix: uv-${{ runner.os }}-${{ matrix.python-version }}
 
-      - name: Install dependecies
+      - name: Install dependencies
         run: uv sync --all-groups
 
   ruff:
@@ -54,7 +54,7 @@ jobs:
           enable-cache: true
           cache-suffix: uv-${{ runner.os }}-${{ matrix.python-version }}
 
-      - name: Install dependecies
+      - name: Install dependencies
         run: uv sync --all-groups
 
       - name: Run ruff
@@ -79,7 +79,7 @@ jobs:
           enable-cache: true
           cache-suffix: uv-${{ runner.os }}-${{ matrix.python-version }}
 
-      - name: Install dependecies
+      - name: Install dependencies
         run: uv sync --all-groups
 
       - name: Run mypy
@@ -104,7 +104,7 @@ jobs:
           enable-cache: true
           cache-suffix: uv-${{ runner.os }}-${{ matrix.python-version }}
 
-      - name: Install dependecies
+      - name: Install dependencies
         run: uv sync --all-groups
 
       - name: Run tests
@@ -131,7 +131,7 @@ jobs:
           enable-cache: true
           cache-suffix: uv-${{ runner.os }}-${{ matrix.python-version }}
 
-      - name: Install dependecies
+      - name: Install dependencies
         run: uv sync --all-groups
 
       - name: Run tests
@@ -175,7 +175,7 @@ jobs:
           enable-cache: true
           cache-suffix: uv-${{ runner.os }}-${{ matrix.python-version }}
 
-      - name: Install dependecies
+      - name: Install dependencies
         run: uv sync --all-groups
 
       - name: Run HACS
@@ -201,7 +201,7 @@ jobs:
           enable-cache: true
           cache-suffix: uv-${{ runner.os }}-${{ matrix.python-version }}
 
-      - name: Install dependecies
+      - name: Install dependencies
         run: uv sync --no-group dev --no-group test
 
       - name: Run Hassfest
