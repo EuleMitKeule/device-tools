@@ -15,18 +15,17 @@
 A custom Home Assistant integration that allows you to modify and interact with devices.
 
 > [!CAUTION]
-> This integration is still in development and has the potential to permanently modify your configuration in a bad way.
-> The stability will improve with the full release of `2.0.0`.
+> I strongly recommend to back up your Home Assistant instance before using this integration, as it modifies core data.
 
-## Roadmap
+## Features
 
-The integration will allow the user to...
+The integration allows the user to...
 
-* [x] Modify static device attributes
-* [x] Assign entities to devices
-* [x] Create new devices
-* [x] Merge devices
-* [x] Automatically revert any modification on removal
+* Modify device attributes
+* Assign entities to devices
+* Create new devices
+* Merge devices
+* Automatically revert any modification on removal
 
 # Installation
 
