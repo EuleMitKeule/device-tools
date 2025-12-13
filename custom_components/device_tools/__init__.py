@@ -448,8 +448,10 @@ async def async_migrate_entry(
     hass.create_task(hass.config_entries.async_remove(config_entry.entry_id))
 
     _LOGGER.info(
-        "Successfully migrated Device Tools config entry %s to v2.1",
+        "Successfully migrated Device Tools config entry %s to v%s.%s",
         config_entry.entry_id,
+        DeviceToolsConfigFlow.VERSION,
+        DeviceToolsConfigFlow.MINOR_VERSION,
     )
 
     return True
