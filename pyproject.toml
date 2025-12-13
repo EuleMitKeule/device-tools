@@ -25,7 +25,7 @@ classifiers = [
 description = "A custom component for Home Assistant to create and modify devices."
 readme = "README.md"
 requires-python = ">=3.13.2"
-version = "0.0.0"
+version = "2.0.1"
 dependencies = [
     "pycares==4.9.0",
 ]
