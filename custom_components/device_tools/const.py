@@ -44,9 +44,7 @@ MODIFIABLE_ATTRIBUTES = {
     ModificationType.ENTITY: [
         CONF_DEVICE_ID,
     ],
-    ModificationType.MERGE: [
-        CONF_MERGE_DEVICE_IDS,
-    ],
+    ModificationType.MERGE: [],
 }
 
 IGNORED_ATTRIBUTES = [

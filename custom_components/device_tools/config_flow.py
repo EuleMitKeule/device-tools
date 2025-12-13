@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from typing import TYPE_CHECKING, Any
+import uuid
 
 import voluptuous as vol
 
@@ -29,7 +30,6 @@ from .const import (
     CONF_MODIFICATION_IS_CUSTOM_ENTRY,
     CONF_MODIFICATION_ORIGINAL_DATA,
     CONF_MODIFICATION_TYPE,
-    CONF_ORIGINAL_DATA,
     CONF_SERIAL_NUMBER,
     CONF_SW_VERSION,
     CONF_VIA_DEVICE_ID,
@@ -387,23 +387,20 @@ class DeviceToolsConfigFlow(ConfigFlow, domain=DOMAIN):
             if device is None:
                 return self.async_abort(reason="entry_not_found")
 
-            device_original_data = device.dict_repr
-
         self._modification_original_data = {
             merge_device_id: {
                 CONF_ENTITIES: {
-                    entity.entity_id: entity.extended_dict
+                    entity.entity_id: {
+                        k: v
+                        for k, v in entity.extended_dict.items()
+                        if k in MODIFIABLE_ATTRIBUTES[ModificationType.ENTITY]
+                    }
                     for entity in er.async_entries_for_device(
                         entity_registry,
                         merge_device_id,
                         include_disabled_entities=True,
                     )
-                },
-                CONF_ORIGINAL_DATA: {
-                    k: v
-                    for k, v in device_original_data.items()
-                    if k in MODIFIABLE_ATTRIBUTES[ModificationType.DEVICE]
-                },
+                }
             }
             for merge_device_id in merge_device_ids
         }
@@ -417,6 +414,7 @@ class DeviceToolsConfigFlow(ConfigFlow, domain=DOMAIN):
         if TYPE_CHECKING:
             assert self._modification_entry_name is not None
 
+        modification_original_data: dict[str, Any] = {}
         if self._modification_entry_id:
             modification_original_data: dict[str, Any]
             match self._modification_type:
@@ -481,7 +479,7 @@ class DeviceToolsConfigFlow(ConfigFlow, domain=DOMAIN):
             assert self._modification_entry_id is not None
             assert self._modification_entry_name is not None
 
-        unique_id = f"{self._modification_type}_{self._modification_entry_id}"
+        unique_id = f"{self._modification_type}_{self._modification_entry_id or str(uuid.uuid4())}"
         await self.async_set_unique_id(unique_id)
         self._abort_if_unique_id_configured(updates=user_input)
 
