@@ -1,18 +1,16 @@
 """Listener for device and entity registry updates."""
 
-from abc import ABC
 from collections import defaultdict
 from collections.abc import Awaitable, Callable
 
 from homeassistant.core import Event, HomeAssistant
-from homeassistant.helpers import device_registry as dr
-from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import device_registry as dr, entity_registry as er
 
 
 class Listener[
     TEntry: (dr.DeviceEntry | er.RegistryEntry),
     TEventData: (dr.EventDeviceRegistryUpdatedData | er.EventEntityRegistryUpdatedData),
-](ABC):
+]:
     """Listener for device and entity registry updates.
 
     Listens for device and entity registry updates and notifies listeners.

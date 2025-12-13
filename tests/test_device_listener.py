@@ -70,7 +70,8 @@ async def test_async_on_device_registry_updated(
     mock_device_registry: MagicMock,
     mock_device_entry: MagicMock,
     mock_event: Event[
-        dr._EventDeviceRegistryUpdatedData_CreateRemove
+        dr._EventDeviceRegistryUpdatedData_Create
+        | dr._EventDeviceRegistryUpdatedData_Remove
         | dr._EventDeviceRegistryUpdatedData_Update
         | dict[str, Any]
     ],

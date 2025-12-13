@@ -24,13 +24,12 @@ class EntryModification(Modification):
         config_entry: ConfigEntry[Any],
         modification_entry_id: str | None = None,
         modification_entry_data: MappingProxyType[str, Any] | None = None,
-        modification_original_data: MappingProxyType[str, Any] | None = None,
         func_get_modification_original_data: Callable[
-            [ConfigEntry], MappingProxyType[str, Any]
+            [ConfigEntry[Any]], MappingProxyType[str, Any]
         ]
         | None = None,
         func_update_modification_original_data: Callable[
-            [ConfigEntry, dict[str, Any]], None
+            [ConfigEntry[Any], dict[str, Any]], None
         ]
         | None = None,
     ) -> None:
@@ -41,7 +40,6 @@ class EntryModification(Modification):
             modification_entry_data=modification_entry_data,
         )
         self._modification_entry_id = modification_entry_id
-        self._modification_original_data = modification_original_data
         self._func_get_modification_original_data = func_get_modification_original_data
         self._func_update_modification_original_data = (
             func_update_modification_original_data
@@ -59,8 +57,6 @@ class EntryModification(Modification):
         """Return the original data before modification."""
         if self._func_get_modification_original_data is not None:
             return self._func_get_modification_original_data(self._config_entry)
-        if self._modification_original_data is not None:
-            return self._modification_original_data
         return MappingProxyType(
             self._config_entry.data[CONF_MODIFICATION_ORIGINAL_DATA]
         )
@@ -83,8 +79,6 @@ class EntryModification(Modification):
                 self._config_entry,
                 data,
             )
-            return
-        if self.modification_original_data is not None:
             return
         self._hass.config_entries.async_update_entry(
             self._config_entry,

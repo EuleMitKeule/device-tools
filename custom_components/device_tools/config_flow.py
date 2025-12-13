@@ -416,7 +416,6 @@ class DeviceToolsConfigFlow(ConfigFlow, domain=DOMAIN):
 
         modification_original_data: dict[str, Any] = {}
         if self._modification_entry_id:
-            modification_original_data: dict[str, Any]
             match self._modification_type:
                 case ModificationType.DEVICE:
                     device_registry = dr.async_get(self.hass)
@@ -501,7 +500,7 @@ class DeviceToolsConfigFlow(ConfigFlow, domain=DOMAIN):
 
     @staticmethod
     @callback
-    def async_get_options_flow(_config_entry: ConfigEntry) -> OptionsFlow:
+    def async_get_options_flow(_config_entry: ConfigEntry[Any]) -> OptionsFlow:
         """Create the options flow."""
         return OptionsFlowHandler()
 

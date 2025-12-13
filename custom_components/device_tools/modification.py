@@ -21,12 +21,12 @@ class Modification(ABC):
     def __init__(
         self,
         hass: HomeAssistant,
-        config_entry: ConfigEntry,
+        config_entry: ConfigEntry[Any],
         modification_entry_data: MappingProxyType[str, Any] | None = None,
     ) -> None:
         """Initialize the modification."""
         self._hass = hass
-        self._config_entry: ConfigEntry = config_entry
+        self._config_entry: ConfigEntry[Any] = config_entry
         self._modification_entry_data = modification_entry_data
 
     @abstractmethod

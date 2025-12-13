@@ -57,7 +57,9 @@ def setup(hass: HomeAssistant, _config: ConfigType) -> bool:
     return True
 
 
-async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
+async def async_setup_entry(
+    hass: HomeAssistant, config_entry: ConfigEntry[Any]
+) -> bool:
     """Set up the config entry."""
     if config_entry.version < 2:
         return False
@@ -130,14 +132,16 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
     return True
 
 
-async def update_listener(hass: HomeAssistant, config_entry: ConfigEntry) -> None:
+async def update_listener(hass: HomeAssistant, config_entry: ConfigEntry[Any]) -> None:
     """Handle options update."""
     _LOGGER.debug("Updating Device Tools config entry %s", config_entry.entry_id)
 
     await hass.config_entries.async_reload(config_entry.entry_id)
 
 
-async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
+async def async_unload_entry(
+    hass: HomeAssistant, config_entry: ConfigEntry[Any]
+) -> bool:
     """Handle config entry unload."""
     if config_entry.unique_id is None:
         _LOGGER.error(
@@ -177,10 +181,10 @@ async def _async_add_entry(
     modification_data: dict[str, Any],
     modification_original_data: dict[str, Any],
     modification_is_custom_entry: bool,
-    config_entry: ConfigEntry,
+    config_entry: ConfigEntry[Any],
 ) -> None:
     """Add a new config entry."""
-    new_config_entry = ConfigEntry(
+    new_config_entry: ConfigEntry[Any] = ConfigEntry(
         created_at=config_entry.created_at,
         data={
             CONF_MODIFICATION_ENTRY_ID: modification_entry_id,
@@ -209,9 +213,8 @@ async def _async_add_entry(
 
 async def _async_migrate_creation_modification(
     hass: HomeAssistant,
-    config_entry: ConfigEntry,
+    config_entry: ConfigEntry[Any],
     device_id: str,
-    device: dr.DeviceEntry,
     modification_name: str,
     attribute_modification: dict[str, Any] | None,
 ) -> None:
@@ -219,7 +222,7 @@ async def _async_migrate_creation_modification(
     modification_data: dict[str, Any] = {}
 
     if attribute_modification:
-        modification_data: dict[str, Any] = {
+        modification_data = {
             new_key: old_value
             for old_key, new_key in {
                 "manufacturer": CONF_MANUFACTURER,
@@ -247,7 +250,7 @@ async def _async_migrate_creation_modification(
 
 async def _async_migrate_attribute_modification(
     hass: HomeAssistant,
-    config_entry: ConfigEntry,
+    config_entry: ConfigEntry[Any],
     device_id: str,
     device: dr.DeviceEntry,
     modification_name: str,
@@ -288,7 +291,7 @@ async def _async_migrate_attribute_modification(
 
 async def _async_migrate_entity_modification(
     hass: HomeAssistant,
-    config_entry: ConfigEntry,
+    config_entry: ConfigEntry[Any],
     device_id: str,
     modification_name: str,
     entity_modification: dict[str, Any],
@@ -332,7 +335,7 @@ async def _async_migrate_entity_modification(
 
 async def _async_migrate_merge_modification(
     hass: HomeAssistant,
-    config_entry: ConfigEntry,
+    config_entry: ConfigEntry[Any],
     device_id: str,
     modification_name: str,
     merge_modification: dict[str, Any],
@@ -382,7 +385,9 @@ async def _async_migrate_merge_modification(
     )
 
 
-async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
+async def async_migrate_entry(
+    hass: HomeAssistant, config_entry: ConfigEntry[Any]
+) -> bool:
     """Migrate old entry."""
     if config_entry.version >= 2:
         return True
@@ -406,7 +411,6 @@ async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) ->
             hass,
             config_entry,
             device_id,
-            device,
             modification_name,
             device_modification.get("attribute_modification"),
         )

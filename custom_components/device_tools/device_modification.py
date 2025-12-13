@@ -21,17 +21,16 @@ class DeviceModification(EntryModification):
     def __init__(
         self,
         hass: HomeAssistant,
-        config_entry: ConfigEntry,
+        config_entry: ConfigEntry[Any],
         listener: DeviceListener,
         modification_entry_id: str | None = None,
         modification_entry_data: MappingProxyType[str, Any] | None = None,
-        modification_original_data: MappingProxyType[str, Any] | None = None,
         func_get_modification_original_data: Callable[
-            [ConfigEntry], MappingProxyType[str, Any]
+            [ConfigEntry[Any]], MappingProxyType[str, Any]
         ]
         | None = None,
         func_update_modification_original_data: Callable[
-            [ConfigEntry, dict[str, Any]], None
+            [ConfigEntry[Any], dict[str, Any]], None
         ]
         | None = None,
     ) -> None:
@@ -41,7 +40,6 @@ class DeviceModification(EntryModification):
             config_entry=config_entry,
             modification_entry_id=modification_entry_id,
             modification_entry_data=modification_entry_data,
-            modification_original_data=modification_original_data,
             func_get_modification_original_data=func_get_modification_original_data,
             func_update_modification_original_data=func_update_modification_original_data,
         )

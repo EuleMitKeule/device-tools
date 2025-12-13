@@ -148,7 +148,7 @@ jobs:
           sed -i 's|/home/runner/work/device-tools/device-tools|/github/workspace|g' coverage.xml
 
       - name: Run SonarCloud analysis
-        uses: sonarsource/sonarcloud-github-action@master
+        uses: SonarSource/sonarqube-scan-action@v7
         env:
           GITHUB_TOKEN: ${{ secrets.PAT }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
