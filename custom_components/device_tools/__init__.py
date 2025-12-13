@@ -215,7 +215,7 @@ async def _async_migrate_creation_modification(
     hass: HomeAssistant,
     config_entry: ConfigEntry[Any],
     device_id: str,
-    modification_name: str,
+    device_name: str,
     attribute_modification: dict[str, Any] | None,
 ) -> None:
     """Migrate creation modification to new format."""
@@ -239,7 +239,7 @@ async def _async_migrate_creation_modification(
     await _async_add_entry(
         hass=hass,
         modification_entry_id=device_id,
-        modification_entry_name=modification_name,
+        modification_entry_name=device_name,
         modification_type=ModificationType.DEVICE,
         modification_data=modification_data,
         modification_is_custom_entry=True,
@@ -397,6 +397,7 @@ async def async_migrate_entry(
 
     device_registry = dr.async_get(hass)
     device_id = device_modification.get("device_id")
+    device_name = device_modification.get("device_name", "Unknown Device")
     if not (device := device_registry.async_get(device_id)):
         return False
 
@@ -411,7 +412,7 @@ async def async_migrate_entry(
             hass,
             config_entry,
             device_id,
-            modification_name,
+            device_name,
             device_modification.get("attribute_modification"),
         )
 
