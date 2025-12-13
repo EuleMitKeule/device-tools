@@ -1,8 +1,8 @@
 [project]
 name = "device-tools"
-authors = [{ name = "Lennard Beers", email = "l.beers@outlook.de"}]
-maintainers = [{ name = "Lennard Beers", email = "l.beers@outlook.de"}]
-license = {file = "LICENSE.md"}
+authors = [{ name = "Lennard Beers", email = "l.beers@outlook.de" }]
+maintainers = [{ name = "Lennard Beers", email = "l.beers@outlook.de" }]
+license = { file = "LICENSE.md" }
 keywords = [
     "homeassistant",
     "custom-component",
@@ -24,21 +24,24 @@ classifiers = [
 ]
 description = "A custom component for Home Assistant to create and modify devices."
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.13.2"
 version = "0.0.0"
 dependencies = [
-    "homeassistant>=2024.12"
+    "pycares==4.9.0",
 ]
 
 [dependency-groups]
 dev = [
     "ruff",
     "mypy",
+    "homeassistant-stubs",
+    "voluptuous-stubs",
+    "homeassistant>=2025.12.0",
+]
+test = [
     "pytest",
     "pytest-asyncio",
     "pytest-cov",
-    "homeassistant-stubs",
-    "voluptuous-stubs",
 ]
 
 [project.urls]
@@ -52,6 +55,7 @@ check_untyped_defs = true
 strict = true
 
 [tool.pytest.ini_options]
+asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 
 [tool.ruff.lint]
@@ -61,4 +65,4 @@ select = ["D", "ARG"]
 convention = "google"
 
 [tool.ruff.lint.per-file-ignores]
-"!custom_components/device_tools/**.py" = ["D"]
+"!custom_components/device_tools/**.py" = ["D", "ARG"]
