@@ -19,8 +19,6 @@ A custom Home Assistant integration that allows you to modify and interact with 
 
 ## Features
 
-The integration allows the user to...
-
 * Modify device attributes
 * Assign entities to devices
 * Create new devices
