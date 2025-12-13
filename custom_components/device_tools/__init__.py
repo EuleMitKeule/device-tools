@@ -59,6 +59,9 @@ def setup(hass: HomeAssistant, _config: ConfigType) -> bool:
 
 async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
     """Set up the config entry."""
+    if config_entry.version < 2:
+        return False
+
     if config_entry.unique_id is None:
         _LOGGER.error(
             "Config entry %s is missing a unique_id, cannot set up modification",
@@ -208,15 +211,34 @@ async def _async_migrate_creation_modification(
     hass: HomeAssistant,
     config_entry: ConfigEntry,
     device_id: str,
+    device: dr.DeviceEntry,
     modification_name: str,
+    attribute_modification: dict[str, Any] | None,
 ) -> None:
     """Migrate creation modification to new format."""
+    modification_data: dict[str, Any] = {}
+
+    if attribute_modification:
+        modification_data: dict[str, Any] = {
+            new_key: old_value
+            for old_key, new_key in {
+                "manufacturer": CONF_MANUFACTURER,
+                "model": CONF_MODEL,
+                "sw_version": CONF_SW_VERSION,
+                "hw_version": CONF_HW_VERSION,
+                "serial_number": CONF_SERIAL_NUMBER,
+                "via_device_id": CONF_VIA_DEVICE_ID,
+            }.items()
+            if old_key in attribute_modification
+            and (old_value := attribute_modification[old_key])
+        }
+
     await _async_add_entry(
         hass=hass,
         modification_entry_id=device_id,
         modification_entry_name=modification_name,
         modification_type=ModificationType.DEVICE,
-        modification_data={},
+        modification_data=modification_data,
         modification_is_custom_entry=True,
         modification_original_data={},
         config_entry=config_entry,
@@ -373,20 +395,25 @@ async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) ->
     if not (device := device_registry.async_get(device_id)):
         return False
 
-    modification_name = config_entry.data.get("modification_name", "")
-
-    if (
+    modification_name = device_modification.get("modification_name", "")
+    modification_is_custom_entry = (
         len(device.config_entries) == 1
         and config_entry.entry_id in device.config_entries
-    ):
+    )
+
+    if modification_is_custom_entry:
         await _async_migrate_creation_modification(
             hass,
             config_entry,
             device_id,
+            device,
             modification_name,
+            device_modification.get("attribute_modification"),
         )
 
-    if attribute_modification := device_modification.get("attribute_modification"):
+    if not modification_is_custom_entry and (
+        attribute_modification := device_modification.get("attribute_modification")
+    ):
         await _async_migrate_attribute_modification(
             hass,
             config_entry,
@@ -414,7 +441,7 @@ async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) ->
             merge_modification,
         )
 
-    await hass.config_entries.async_remove(config_entry.entry_id)
+    hass.create_task(hass.config_entries.async_remove(config_entry.entry_id))
 
     _LOGGER.info(
         "Successfully migrated Device Tools config entry %s to v2.1",
