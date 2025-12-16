@@ -115,77 +115,86 @@ def _get_device_options_schema(
     modification_original_data: dict[str, Any],
 ) -> vol.Schema:
     """Return the schema for a device modification."""
-    return _get_base_options_schema(
-        modification_type,
-        modification_entry_id,
-    ).extend(
-        required=True,
-        schema={
-            vol.Required(CONF_DEVICE_ATTRIBUTES): section(
-                vol.Schema(
-                    {
-                        vol.Optional(
-                            CONF_MANUFACTURER,
-                            description={
-                                "suggested_value": modification_data.get(
-                                    CONF_MANUFACTURER,
-                                    modification_original_data.get(CONF_MANUFACTURER),
-                                ),
-                            },
-                        ): str,
-                        vol.Optional(
-                            CONF_MODEL,
-                            description={
-                                "suggested_value": modification_data.get(
-                                    CONF_MODEL,
-                                    modification_original_data.get(CONF_MODEL),
+    return cast(
+        vol.Schema,
+        _get_base_options_schema(
+            modification_type,
+            modification_entry_id,
+        ).extend(
+            required=True,
+            schema={
+                vol.Required(CONF_DEVICE_ATTRIBUTES): section(
+                    vol.Schema(
+                        {
+                            vol.Optional(
+                                CONF_MANUFACTURER,
+                                description={
+                                    "suggested_value": modification_data.get(
+                                        CONF_MANUFACTURER,
+                                        modification_original_data.get(
+                                            CONF_MANUFACTURER
+                                        ),
+                                    ),
+                                },
+                            ): str,
+                            vol.Optional(
+                                CONF_MODEL,
+                                description={
+                                    "suggested_value": modification_data.get(
+                                        CONF_MODEL,
+                                        modification_original_data.get(CONF_MODEL),
+                                    )
+                                },
+                            ): str,
+                            vol.Optional(
+                                CONF_SW_VERSION,
+                                description={
+                                    "suggested_value": modification_data.get(
+                                        CONF_SW_VERSION,
+                                        modification_original_data.get(CONF_SW_VERSION),
+                                    )
+                                },
+                            ): str,
+                            vol.Optional(
+                                CONF_HW_VERSION,
+                                description={
+                                    "suggested_value": modification_data.get(
+                                        CONF_HW_VERSION,
+                                        modification_original_data.get(CONF_HW_VERSION),
+                                    )
+                                },
+                            ): str,
+                            vol.Optional(
+                                CONF_SERIAL_NUMBER,
+                                description={
+                                    "suggested_value": modification_data.get(
+                                        CONF_SERIAL_NUMBER,
+                                        modification_original_data.get(
+                                            CONF_SERIAL_NUMBER
+                                        ),
+                                    )
+                                },
+                            ): str,
+                            vol.Optional(
+                                CONF_VIA_DEVICE_ID,
+                                description={
+                                    "suggested_value": modification_data.get(
+                                        CONF_VIA_DEVICE_ID,
+                                        modification_original_data.get(
+                                            CONF_VIA_DEVICE_ID
+                                        ),
+                                    )
+                                },
+                            ): selector.DeviceSelector(
+                                selector.DeviceSelectorConfig(
+                                    multiple=False,
                                 )
-                            },
-                        ): str,
-                        vol.Optional(
-                            CONF_SW_VERSION,
-                            description={
-                                "suggested_value": modification_data.get(
-                                    CONF_SW_VERSION,
-                                    modification_original_data.get(CONF_SW_VERSION),
-                                )
-                            },
-                        ): str,
-                        vol.Optional(
-                            CONF_HW_VERSION,
-                            description={
-                                "suggested_value": modification_data.get(
-                                    CONF_HW_VERSION,
-                                    modification_original_data.get(CONF_HW_VERSION),
-                                )
-                            },
-                        ): str,
-                        vol.Optional(
-                            CONF_SERIAL_NUMBER,
-                            description={
-                                "suggested_value": modification_data.get(
-                                    CONF_SERIAL_NUMBER,
-                                    modification_original_data.get(CONF_SERIAL_NUMBER),
-                                )
-                            },
-                        ): str,
-                        vol.Optional(
-                            CONF_VIA_DEVICE_ID,
-                            description={
-                                "suggested_value": modification_data.get(
-                                    CONF_VIA_DEVICE_ID,
-                                    modification_original_data.get(CONF_VIA_DEVICE_ID),
-                                )
-                            },
-                        ): selector.DeviceSelector(
-                            selector.DeviceSelectorConfig(
-                                multiple=False,
-                            )
-                        ),
-                    },
+                            ),
+                        },
+                    )
                 )
-            )
-        },
+            },
+        ),
     )
 
 
@@ -196,32 +205,35 @@ def _get_entity_options_schema(
     modification_original_data: dict[str, Any],
 ) -> vol.Schema:
     """Return the schema for an entity modification."""
-    return _get_base_options_schema(
-        modification_type,
-        modification_entry_id,
-    ).extend(
-        required=True,
-        schema={
-            vol.Required(CONF_ENTITY_ATTRIBUTES): section(
-                vol.Schema(
-                    {
-                        vol.Optional(
-                            CONF_DEVICE_ID,
-                            description={
-                                "suggested_value": modification_data.get(
-                                    CONF_DEVICE_ID,
-                                    modification_original_data.get(CONF_DEVICE_ID),
+    return cast(
+        vol.Schema,
+        _get_base_options_schema(
+            modification_type,
+            modification_entry_id,
+        ).extend(
+            required=True,
+            schema={
+                vol.Required(CONF_ENTITY_ATTRIBUTES): section(
+                    vol.Schema(
+                        {
+                            vol.Optional(
+                                CONF_DEVICE_ID,
+                                description={
+                                    "suggested_value": modification_data.get(
+                                        CONF_DEVICE_ID,
+                                        modification_original_data.get(CONF_DEVICE_ID),
+                                    )
+                                },
+                            ): selector.DeviceSelector(
+                                selector.DeviceSelectorConfig(
+                                    multiple=False,
                                 )
-                            },
-                        ): selector.DeviceSelector(
-                            selector.DeviceSelectorConfig(
-                                multiple=False,
-                            )
-                        ),
-                    }
-                )
-            ),
-        },
+                            ),
+                        }
+                    )
+                ),
+            },
+        ),
     )
 
 
@@ -232,33 +244,36 @@ def _get_merge_options_schema(
     modification_original_data: dict[str, Any],
 ) -> vol.Schema:
     """Return the schema for a merge modification."""
-    return _get_base_options_schema(
-        modification_type,
-        modification_entry_id,
-    ).extend(
-        required=True,
-        schema={
-            vol.Required(CONF_MERGE_OPTIONS): section(
-                vol.Schema(
-                    {
-                        vol.Optional(
-                            CONF_MERGE_DEVICE_IDS,
-                            description={
-                                "suggested_value": modification_data.get(
-                                    CONF_MERGE_DEVICE_IDS,
-                                    list(modification_original_data.keys()),
+    return cast(
+        vol.Schema,
+        _get_base_options_schema(
+            modification_type,
+            modification_entry_id,
+        ).extend(
+            required=True,
+            schema={
+                vol.Required(CONF_MERGE_OPTIONS): section(
+                    vol.Schema(
+                        {
+                            vol.Optional(
+                                CONF_MERGE_DEVICE_IDS,
+                                description={
+                                    "suggested_value": modification_data.get(
+                                        CONF_MERGE_DEVICE_IDS,
+                                        list(modification_original_data.keys()),
+                                    )
+                                },
+                            ): selector.DeviceSelector(
+                                selector.DeviceSelectorConfig(
+                                    multiple=True,
+                                    read_only=True,
                                 )
-                            },
-                        ): selector.DeviceSelector(
-                            selector.DeviceSelectorConfig(
-                                multiple=True,
-                                read_only=True,
-                            )
-                        ),
-                    }
+                            ),
+                        }
+                    )
                 )
-            )
-        },
+            },
+        ),
     )
 
 
