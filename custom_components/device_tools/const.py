@@ -4,7 +4,12 @@ from enum import StrEnum
 
 DOMAIN = "device_tools"
 
+CONF_INFORMATION = "information"
+CONF_DEVICE_ATTRIBUTES = "device_attributes"
+CONF_ENTITY_ATTRIBUTES = "entity_attributes"
+CONF_MERGE_OPTIONS = "merge_options"
 CONF_MODIFICATION_TYPE = "modification_type"
+CONF_MODIFICATION_ENTRY = "modification_entry"
 CONF_MODIFICATION_ENTRY_ID = "modification_entry_id"
 CONF_MODIFICATION_IS_CUSTOM_ENTRY = "modification_is_custom_entry"
 CONF_MODIFICATION_ENTRY_NAME = "modification_entry_name"
@@ -30,6 +35,11 @@ class ModificationType(StrEnum):
     DEVICE = "device"
     ENTITY = "entity"
     MERGE = "merge"
+
+    @property
+    def friendly_name(self) -> str:
+        """Get the friendly name for the modification type."""
+        return self.value.capitalize()
 
 
 MODIFIABLE_ATTRIBUTES = {

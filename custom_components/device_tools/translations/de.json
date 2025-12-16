@@ -20,57 +20,106 @@
                     "modification_type": "Wähle aus, ob ein Gerät oder eine Entität modifiziert oder Geräte zusammengeführt werden sollen"
                 }
             },
-            "select_entry": {
-                "title": "Eintrag zum Ändern auswählen",
-                "description": "Wähle das Gerät oder die Entität aus, die du ändern möchtest, oder lasse das Feld leer, um einen neuen Eintrag zu erstellen",
+            "select_device": {
+                "title": "Gerät zum Modifizieren auswählen",
+                "description": "Wähle das Gerät aus, das du ändern möchtest, oder lasse das Feld leer, um ein neues Gerät zu erstellen",
                 "data": {
-                    "modification_entry_id": "Eintrag"
+                    "modification_entry_id": "Gerät"
                 }
             },
-            "create_entry": {
-                "title": "Neuen Eintrag erstellen",
-                "description": "Gib einen Namen für den neuen Eintrag ein",
+            "select_entity": {
+                "title": "Entität zum Modifizieren auswählen",
+                "description": "Wähle die Entität aus, die du ändern möchtest",
                 "data": {
-                    "modification_entry_name": "Eintragsname"
+                    "modification_entry_id": "Entität"
                 }
             },
-            "merge_entry": {
+            "create_device": {
+                "title": "Neues Gerät erstellen",
+                "description": "Gib einen Namen für das neue Gerät ein",
+                "data": {
+                    "modification_entry_name": "Gerätename"
+                }
+            },
+            "merge_device": {
                 "title": "Geräte zum Zusammenführen auswählen",
-                "description": "Wähle die Geräte aus, die zusammengeführt werden sollen",
+                "description": "Wähle die Geräte aus, die mit dem ausgewählten Gerät zusammengeführt werden sollen",
                 "data": {
                     "merge_device_ids": "Geräte zum Zusammenführen"
                 }
             },
-            "merge_entry_options": {
-                "title": "Optionen zum Zusammenführen",
-                "description": "Verhalten beim Zusammenführen konfigurieren",
-                "data": {
-                    "disable_merged_devices": "Zusammengeführte Geräte deaktivieren"
-                },
-                "data_description": {
-                    "disable_merged_devices": "Geräte nach dem Zusammenführen automatisch deaktivieren"
+            "modify_device": {
+                "title": "Modifikation anpassen",
+                "sections": {
+                    "information": {
+                        "name": "Informationen",
+                        "description": "Informationen zu dieser Modifikation",
+                        "data": {
+                            "modification_type": "Modifikationstyp (nicht ändern!)",
+                            "modification_entry": "Modifizierter Eintrag (nicht ändern!)"
+                        },
+                        "data_description": {
+                            "modification_type": "Der Typ dieser Modifikation",
+                            "modification_entry": "Der Eintrag (Gerät/Entität), der von dieser Modifikation betroffen ist"
+                        }
+                    },
+                    "device_attributes": {
+                        "name": "Geräteattribute",
+                        "description": "Attribute des Geräts ändern",
+                        "data": {
+                            "manufacturer": "Hersteller",
+                            "model": "Modell",
+                            "sw_version": "Softwareversion",
+                            "hw_version": "Hardwareversion",
+                            "serial_number": "Seriennummer",
+                            "via_device_id": "Übergeordnetes Gerät"
+                        },
+                        "data_description": {
+                            "manufacturer": "Der Hersteller des Geräts",
+                            "model": "Das Modell des Geräts",
+                            "sw_version": "Die Softwareversion des Geräts",
+                            "hw_version": "Die Hardwareversion des Geräts",
+                            "serial_number": "Die Seriennummer des Geräts",
+                            "via_device_id": "Das Gerät, über das dieses Gerät verbunden ist"
+                        }
+                    },
+                    "entity_attributes": {
+                        "name": "Entitätsattribute",
+                        "description": "Attribute der Entität ändern",
+                        "data": {
+                            "device_id": "Gerät"
+                        },
+                        "data_description": {
+                            "device_id": "Das Gerät, zu dem diese Entität gehört"
+                        }
+                    }
                 }
             },
-            "modify_entry": {
-                "title": "Eintrag ändern",
-                "description": "Eintragsattribute konfigurieren",
-                "data": {
-                    "manufacturer": "Hersteller",
-                    "model": "Modell",
-                    "sw_version": "Softwareversion",
-                    "hw_version": "Hardwareversion",
-                    "serial_number": "Seriennummer",
-                    "via_device_id": "Übergeordnetes Gerät",
-                    "device_id": "Gerät"
-                },
-                "data_description": {
-                    "manufacturer": "Der Hersteller des Geräts",
-                    "model": "Das Modell des Geräts",
-                    "sw_version": "Die Softwareversion des Geräts",
-                    "hw_version": "Die Hardwareversion des Geräts",
-                    "serial_number": "Die Seriennummer des Geräts",
-                    "via_device_id": "Das Gerät, über das dieses Gerät verbunden ist",
-                    "device_id": "Das Gerät, zu dem diese Entität gehört"
+            "modify_entity": {
+                "title": "Modifikation anpassen",
+                "sections": {
+                    "information": {
+                        "name": "Informationen",
+                        "description": "Informationen zu dieser Modifikation",
+                        "data": {
+                            "modification_type": "Modifikationstyp (nicht ändern!)",
+                            "modification_entry": "Modifizierter Eintrag (nicht ändern!)"
+                        },
+                        "data_description": {
+                            "modification_type": "Der Typ dieser Modifikation",
+                            "modification_entry": "Der Eintrag (Gerät/Entität), der von dieser Modifikation betroffen ist"
+                        }
+                    },
+                    "entity_attributes": {
+                        "name": "Entitätsattribute",
+                        "description": "Attribute der Entität ändern",
+                        "data": {
+                            "device_id": "Gerät"
+                        },
+                        "data_description": {
+                            "device_id": "Das Gerät, zu dem diese Entität gehört"
+                        }
+                    }
                 }
             }
         }
@@ -87,27 +136,60 @@
     "options": {
         "step": {
             "init": {
-                "title": "Eintrag ändern",
-                "description": "Eintragsattribute aktualisieren",
-                "data": {
-                    "manufacturer": "Hersteller",
-                    "model": "Modell",
-                    "sw_version": "Softwareversion",
-                    "hw_version": "Hardwareversion",
-                    "serial_number": "Seriennummer",
-                    "via_device_id": "Übergeordnetes Gerät",
-                    "device_id": "Gerät",
-                    "disable_merged_devices": "Zusammengeführte Geräte deaktivieren"
-                },
-                "data_description": {
-                    "manufacturer": "Der Hersteller des Geräts",
-                    "model": "Das Modell des Geräts",
-                    "sw_version": "Die Softwareversion des Geräts",
-                    "hw_version": "Die Hardwareversion des Geräts",
-                    "serial_number": "Die Seriennummer des Geräts",
-                    "via_device_id": "Das Gerät, über das dieses Gerät verbunden ist",
-                    "device_id": "Das Gerät, zu dem diese Entität gehört",
-                    "disable_merged_devices": "Geräte nach dem Zusammenführen automatisch deaktivieren"
+                "title": "Modifikation anpassen",
+                "sections": {
+                    "information": {
+                        "name": "Informationen",
+                        "description": "Informationen zu dieser Modifikation",
+                        "data": {
+                            "modification_type": "Modifikationstyp (nicht ändern!)",
+                            "modification_entry": "Modifizierter Eintrag (nicht ändern!)"
+                        },
+                        "data_description": {
+                            "modification_type": "Der Typ dieser Modifikation",
+                            "modification_entry": "Der Eintrag (Gerät/Entität), der von dieser Modifikation betroffen ist"
+                        }
+                    },
+                    "device_attributes": {
+                        "name": "Geräteattribute",
+                        "description": "Attribute des Geräts ändern",
+                        "data": {
+                            "manufacturer": "Hersteller",
+                            "model": "Modell",
+                            "sw_version": "Softwareversion",
+                            "hw_version": "Hardwareversion",
+                            "serial_number": "Seriennummer",
+                            "via_device_id": "Übergeordnetes Gerät"
+                        },
+                        "data_description": {
+                            "manufacturer": "Der Hersteller des Geräts",
+                            "model": "Das Modell des Geräts",
+                            "sw_version": "Die Softwareversion des Geräts",
+                            "hw_version": "Die Hardwareversion des Geräts",
+                            "serial_number": "Die Seriennummer des Geräts",
+                            "via_device_id": "Das Gerät, über das dieses Gerät verbunden ist"
+                        }
+                    },
+                    "entity_attributes": {
+                        "name": "Entitätsattribute",
+                        "description": "Attribute der Entität ändern",
+                        "data": {
+                            "device_id": "Gerät"
+                        },
+                        "data_description": {
+                            "device_id": "Das Gerät, zu dem diese Entität gehört"
+                        }
+                    },
+                    "merge_options": {
+                        "name": "Zusammenführungsoptionen",
+                        "description": "Optionen für die Zusammenführung von Geräten",
+                        "data": {
+                            "merge_device_ids": "Geräte zum Zusammenführen (kann zurzeit nicht geändert werden)"
+                        },
+                        "data_description": {
+                            "merge_device_ids": "Die Geräte, die mit dem ausgewählten Gerät zusammengeführt werden sollen"
+                        }
+                    }
                 }
             }
         }
