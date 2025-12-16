@@ -63,7 +63,7 @@ def get_default_config_entry_title(
     modification_type: ModificationType,
     modification_entry_name: str,
 ) -> str:
-    """Get the default title for a config entry title."""
+    """Return the default title for a config entry."""
     return f"{modification_type.friendly_name}: {modification_entry_name}"
 
 
