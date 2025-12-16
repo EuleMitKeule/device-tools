@@ -55,7 +55,7 @@
                         "name": "Informationen",
                         "description": "Informationen zu dieser Modifikation",
                         "data": {
-                            "modification_type": "Modifikationstyp (nicht ändern!)",
+                            "modification_type": "Modifikationstyp",
                             "modification_entry": "Modifizierter Eintrag (nicht ändern!)"
                         },
                         "data_description": {
