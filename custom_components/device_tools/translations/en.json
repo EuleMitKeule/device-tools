@@ -55,7 +55,7 @@
                         "name": "Information",
                         "description": "Information about this modification",
                         "data": {
-                            "modification_type": "Modification type",
+                            "modification_type": "Modification type (do not change!)",
                             "modification_entry": "Modified entry (do not change!)"
                         },
                         "data_description": {
@@ -92,7 +92,7 @@
                         "name": "Information",
                         "description": "Information about this modification",
                         "data": {
-                            "modification_type": "Modification type",
+                            "modification_type": "Modification type (do not change!)",
                             "modification_entry": "Modified entry (do not change!)"
                         },
                         "data_description": {
@@ -132,7 +132,7 @@
                         "name": "Information",
                         "description": "Information about this modification",
                         "data": {
-                            "modification_type": "Modification type",
+                            "modification_type": "Modification type (do not change!)",
                             "modification_entry": "Modified entry (do not change!)"
                         },
                         "data_description": {
