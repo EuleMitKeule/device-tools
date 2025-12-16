@@ -41,6 +41,7 @@ from .device_modification import DeviceModification
 from .entity_listener import EntityListener
 from .entity_modification import EntityModification
 from .merge_modification import MergeModification
+from .utils import get_default_config_entry_title, name_for_device, name_for_entity
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 _LOGGER = logging.getLogger(__name__)
@@ -177,6 +178,7 @@ async def _async_add_entry(
     hass: HomeAssistant,
     modification_entry_id: str,
     modification_entry_name: str,
+    modification_entry_current_name: str,
     modification_type: ModificationType,
     modification_data: dict[str, Any],
     modification_original_data: dict[str, Any],
@@ -184,6 +186,10 @@ async def _async_add_entry(
     config_entry: ConfigEntry[Any],
 ) -> None:
     """Add a new config entry."""
+    title = get_default_config_entry_title(
+        modification_type,
+        modification_entry_current_name,
+    )
     new_config_entry: ConfigEntry[Any] = ConfigEntry(
         created_at=config_entry.created_at,
         data={
@@ -204,7 +210,7 @@ async def _async_add_entry(
         pref_disable_polling=config_entry.pref_disable_polling,
         source=config_entry.source,
         subentries_data=MappingProxyType({}),
-        title=modification_entry_name,
+        title=title,
         unique_id=f"{modification_type.value}_{modification_entry_id}",
         version=DeviceToolsConfigFlow.VERSION,
     )
@@ -240,6 +246,7 @@ async def _async_migrate_creation_modification(
         hass=hass,
         modification_entry_id=device_id,
         modification_entry_name=device_name,
+        modification_entry_current_name=device_name,
         modification_type=ModificationType.DEVICE,
         modification_data=modification_data,
         modification_is_custom_entry=True,
@@ -281,6 +288,7 @@ async def _async_migrate_attribute_modification(
         hass=hass,
         modification_entry_id=device_id,
         modification_entry_name=modification_name,
+        modification_entry_current_name=name_for_device(device),
         modification_type=ModificationType.DEVICE,
         modification_data=modification_data,
         modification_is_custom_entry=False,
@@ -325,6 +333,7 @@ async def _async_migrate_entity_modification(
             hass=hass,
             modification_entry_id=modification_entry_id,
             modification_entry_name=modification_name,
+            modification_entry_current_name=name_for_entity(entity),
             modification_type=ModificationType.ENTITY,
             modification_data=modification_data,
             modification_is_custom_entry=False,
@@ -337,6 +346,7 @@ async def _async_migrate_merge_modification(
     hass: HomeAssistant,
     config_entry: ConfigEntry[Any],
     device_id: str,
+    device: dr.DeviceEntry,
     modification_name: str,
     merge_modification: dict[str, Any],
 ) -> None:
@@ -377,6 +387,7 @@ async def _async_migrate_merge_modification(
         hass=hass,
         modification_entry_id=device_id,
         modification_entry_name=modification_name,
+        modification_entry_current_name=name_for_device(device),
         modification_type=ModificationType.MERGE,
         modification_data={},
         modification_is_custom_entry=False,
@@ -442,6 +453,7 @@ async def async_migrate_entry(
             hass,
             config_entry,
             device_id,
+            device,
             modification_name,
             merge_modification,
         )
