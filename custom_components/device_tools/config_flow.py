@@ -1,8 +1,10 @@
 from __future__ import annotations
+
 import logging
 from typing import TYPE_CHECKING, Any
 
 import voluptuous as vol
+
 from homeassistant.config_entries import ConfigEntry, ConfigFlow, OptionsFlow
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.data_entry_flow import FlowResult
@@ -10,15 +12,11 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.device_registry import (
     DeviceEntry,
     DeviceRegistry,
-)
-from homeassistant.helpers.device_registry import (
     async_get as async_get_device_registry,
 )
 from homeassistant.helpers.entity_registry import (
     EntityRegistry,
     async_entries_for_device,
-)
-from homeassistant.helpers.entity_registry import (
     async_get as async_get_entity_registry,
 )
 from homeassistant.helpers.selector import (
@@ -312,7 +310,7 @@ class DeviceToolsConfigFlow(ConfigFlow, domain=DOMAIN):
                     }
                 ),
             )
-        elif device_id is not None:
+        if device_id is not None:
             other_entries: list[ConfigEntry] = self._async_current_entries()
             entry_with_same_device: ConfigEntry | None = next(
                 (
@@ -379,7 +377,7 @@ class OptionsFlowHandler(OptionsFlow):
     def __init__(self, config_entry: ConfigEntry) -> None:
         """Initialize options flow."""
 
-        self.config_entry = config_entry
+        self._config_entry = config_entry
         self.device_modification: DeviceModification = config_entry.data[
             "device_modification"
         ]
