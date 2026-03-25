@@ -110,6 +110,7 @@ async def async_setup_entry(
                 hass,
                 config_entry,
                 device_tools_data.device_listener,
+                entity_listener=device_tools_data.entity_listener,
             )
         case ModificationType.ENTITY:
             modification = EntityModification(

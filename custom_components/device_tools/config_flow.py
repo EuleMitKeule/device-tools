@@ -14,14 +14,16 @@ from homeassistant.config_entries import (
     ConfigFlowResult,
     OptionsFlow,
 )
-from homeassistant.core import callback
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.data_entry_flow import section
 from homeassistant.helpers import device_registry as dr, entity_registry as er, selector
 
 from .const import (
+    CONF_ASSIGNED_ENTITIES,
     CONF_DEVICE_ATTRIBUTES,
     CONF_DEVICE_ID,
     CONF_ENTITIES,
+    CONF_ENTITY_ASSIGNMENT,
     CONF_ENTITY_ATTRIBUTES,
     CONF_HW_VERSION,
     CONF_INFORMATION,
@@ -113,8 +115,27 @@ def _get_device_options_schema(
     modification_entry_id: str | None,
     modification_data: dict[str, Any],
     modification_original_data: dict[str, Any],
+    hass: HomeAssistant | None = None,
 ) -> vol.Schema:
     """Return the schema for a device modification."""
+    # Entities already natively on the target device should not be selectable —
+    # they are already there and don't need bulk assignment.  Entities that the
+    # user previously bulk-assigned (present in CONF_ASSIGNED_ENTITIES) are kept
+    # selectable so the user can deselect (remove) them.
+    already_assigned_by_us: set[str] = set(
+        modification_data.get(CONF_ASSIGNED_ENTITIES, [])
+    )
+    exclude_entities: list[str] = []
+    if hass is not None and modification_entry_id:
+        exclude_entities = [
+            entity.entity_id
+            for entity in er.async_entries_for_device(
+                er.async_get(hass),
+                modification_entry_id,
+                include_disabled_entities=True,
+            )
+            if entity.entity_id not in already_assigned_by_us
+        ]
     return cast(
         vol.Schema,
         _get_base_options_schema(
@@ -192,7 +213,26 @@ def _get_device_options_schema(
                             ),
                         },
                     )
-                )
+                ),
+                vol.Required(CONF_ENTITY_ASSIGNMENT): section(
+                    vol.Schema(
+                        {
+                            vol.Optional(
+                                CONF_ASSIGNED_ENTITIES,
+                                description={
+                                    "suggested_value": modification_data.get(
+                                        CONF_ASSIGNED_ENTITIES, []
+                                    ),
+                                },
+                            ): selector.EntitySelector(
+                                selector.EntitySelectorConfig(
+                                    multiple=True,
+                                    exclude_entities=exclude_entities,
+                                )
+                            ),
+                        }
+                    )
+                ),
             },
         ),
     )
@@ -282,6 +322,7 @@ def _get_options_schema(
     modification_entry_id: str | None,
     modification_original_data: dict[str, Any] | None,
     modification_data: dict[str, Any],
+    hass: HomeAssistant | None = None,
 ) -> vol.Schema:
     """Return the schema for a modification."""
     match modification_type:
@@ -291,6 +332,7 @@ def _get_options_schema(
                 modification_entry_id,
                 modification_data,
                 modification_original_data or {},
+                hass,
             )
         case ModificationType.ENTITY:
             return _get_entity_options_schema(
@@ -376,13 +418,21 @@ def _user_input_to_modification_data(
         case _:
             attributes = {}
 
-    return {
+    result = {
         k: v
         for k, v in attributes.items()
         if v is not None
         and v != modification_original_data.get(k)
         and k in MODIFIABLE_ATTRIBUTES[modification_type]
     }
+
+    if modification_type == ModificationType.DEVICE:
+        entity_assignment = user_input.get(CONF_ENTITY_ASSIGNMENT, {})
+        assigned = entity_assignment.get(CONF_ASSIGNED_ENTITIES) or []
+        if assigned:
+            result[CONF_ASSIGNED_ENTITIES] = assigned
+
+    return result
 
 
 def _options_flow_user_input_to_modification_data(
@@ -404,11 +454,19 @@ def _options_flow_user_input_to_modification_data(
         case _:
             attributes = {}
 
-    return {
+    result = {
         k: v
         for k, v in attributes.items()
         if v is not None and k in MODIFIABLE_ATTRIBUTES[modification_type]
     }
+
+    if modification_type == ModificationType.DEVICE:
+        entity_assignment = user_input.get(CONF_ENTITY_ASSIGNMENT, {})
+        # Always store CONF_ASSIGNED_ENTITIES (even as []) so the user can
+        # clear a previously saved bulk assignment via the options flow.
+        result[CONF_ASSIGNED_ENTITIES] = entity_assignment.get(CONF_ASSIGNED_ENTITIES) or []
+
+    return result
 
 
 class DeviceToolsConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -610,6 +668,7 @@ class DeviceToolsConfigFlow(ConfigFlow, domain=DOMAIN):
                     self._modification_entry_id,
                     self._modification_original_data,
                     {},
+                    self.hass,
                 ),
             )
 
@@ -639,6 +698,7 @@ class DeviceToolsConfigFlow(ConfigFlow, domain=DOMAIN):
                     self._modification_entry_id,
                     {},
                     {},
+                    self.hass,
                 ),
                 errors={"base": "entity_in_merge"},
             )
@@ -659,6 +719,7 @@ class DeviceToolsConfigFlow(ConfigFlow, domain=DOMAIN):
                     self._modification_entry_id,
                     self._modification_original_data,
                     {},
+                    self.hass,
                 ),
             )
 
@@ -739,6 +800,7 @@ class OptionsFlowHandler(OptionsFlow):
             modification_entry_id,
             modification_original_data,
             modification_data,
+            self.hass,
         )
 
         if user_input is None:

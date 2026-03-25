@@ -7,6 +7,7 @@ DOMAIN = "device_tools"
 CONF_INFORMATION = "information"
 CONF_DEVICE_ATTRIBUTES = "device_attributes"
 CONF_ENTITY_ATTRIBUTES = "entity_attributes"
+CONF_ENTITY_ASSIGNMENT = "entity_assignment"
 CONF_MERGE_OPTIONS = "merge_options"
 CONF_MODIFICATION_TYPE = "modification_type"
 CONF_MODIFICATION_ENTRY = "modification_entry"
@@ -23,6 +24,9 @@ CONF_SERIAL_NUMBER = "serial_number"
 CONF_VIA_DEVICE_ID = "via_device_id"
 
 CONF_DEVICE_ID = "device_id"
+
+CONF_ASSIGNED_ENTITIES = "assigned_entities"
+CONF_ENTITY_ORIGINAL_DEVICE_IDS = "_entity_original_device_ids"
 
 CONF_MERGE_DEVICE_IDS = "merge_device_ids"
 CONF_ENTITIES = "entities"

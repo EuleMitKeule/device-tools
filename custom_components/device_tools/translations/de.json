@@ -83,14 +83,14 @@
                             "via_device_id": "Das Gerät, über das dieses Gerät verbunden ist"
                         }
                     },
-                    "entity_attributes": {
-                        "name": "Entitätsattribute",
-                        "description": "Attribute der Entität ändern",
+                    "entity_assignment": {
+                        "name": "Entitätszuweisung",
+                        "description": "Zusätzliche Entitäten diesem Gerät zuweisen",
                         "data": {
-                            "device_id": "Gerät"
+                            "assigned_entities": "Zugewiesene Entitäten"
                         },
                         "data_description": {
-                            "device_id": "Das Gerät, zu dem diese Entität gehört"
+                            "assigned_entities": "Entitäten, die diesem Gerät zugewiesen werden sollen. Entitäten, die bereits nativ zu diesem Gerät gehören, werden nicht aufgelistet."
                         }
                     }
                 }
@@ -168,6 +168,16 @@
                             "hw_version": "Die Hardwareversion des Geräts",
                             "serial_number": "Die Seriennummer des Geräts",
                             "via_device_id": "Das Gerät, über das dieses Gerät verbunden ist"
+                        }
+                    },
+                    "entity_assignment": {
+                        "name": "Entitätszuweisung",
+                        "description": "Zusätzliche Entitäten diesem Gerät zuweisen",
+                        "data": {
+                            "assigned_entities": "Zugewiesene Entitäten"
+                        },
+                        "data_description": {
+                            "assigned_entities": "Entitäten, die diesem Gerät zugewiesen werden sollen. Entitäten, die bereits nativ zu diesem Gerät gehören, werden nicht aufgelistet."
                         }
                     },
                     "entity_attributes": {

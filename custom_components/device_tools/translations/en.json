@@ -82,6 +82,16 @@
                             "serial_number": "The serial number of the device",
                             "via_device_id": "The device this device is connected through"
                         }
+                    },
+                    "entity_assignment": {
+                        "name": "Entity assignment",
+                        "description": "Assign additional entities to this device",
+                        "data": {
+                            "assigned_entities": "Assigned entities"
+                        },
+                        "data_description": {
+                            "assigned_entities": "Entities to assign to this device. Entities that are already natively part of this device are not listed."
+                        }
                     }
                 }
             },
@@ -158,6 +168,16 @@
                             "hw_version": "The hardware version of the device",
                             "serial_number": "The serial number of the device",
                             "via_device_id": "The device this device is connected through"
+                        }
+                    },
+                    "entity_assignment": {
+                        "name": "Entity assignment",
+                        "description": "Assign additional entities to this device",
+                        "data": {
+                            "assigned_entities": "Assigned entities"
+                        },
+                        "data_description": {
+                            "assigned_entities": "Entities to assign to this device. Entities that are already natively part of this device are not listed."
                         }
                     },
                     "entity_attributes": {
