@@ -7,6 +7,8 @@ jobs:
   semantic-release:
     runs-on: ubuntu-latest
     concurrency: release
+    permissions:
+      contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -15,6 +17,26 @@ jobs:
           persist-credentials: false
 
       - name: Semantic Release
+        id: semantic
         uses: cycjimmy/semantic-release-action@v3
+        env:
+          GITHUB_TOKEN: ${{ secrets.PAT }}
+
+      - name: Inject version into manifest
+        if: steps.semantic.outputs.new_release_published == 'true'
+        run: |
+          sed -i 's/"version": "0.0.0-dev"/"version": "${{ steps.semantic.outputs.new_release_version }}"/' \
+            custom_components/device_tools/manifest.json
+
+      - name: Create zip
+        if: steps.semantic.outputs.new_release_published == 'true'
+        run: |
+          cd custom_components/device_tools
+          zip -r ../../device_tools.zip .
+
+      - name: Upload zip to release
+        if: steps.semantic.outputs.new_release_published == 'true'
+        run: |
+          gh release upload ${{ steps.semantic.outputs.new_release_version }} device_tools.zip
         env:
           GITHUB_TOKEN: ${{ secrets.PAT }}
