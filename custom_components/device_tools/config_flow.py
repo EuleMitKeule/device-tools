@@ -376,6 +376,24 @@ def _user_input_to_modification_data(
     }
 
 
+def _options_flow_user_input_to_modification_data(
+    user_input: dict[str, Any],
+    modification_type: ModificationType,
+) -> dict[str, Any]:
+    """Return the modification data from options flow user input.
+
+    Unlike _user_input_to_modification_data, this does NOT filter out values
+    that match the original data. This allows resetting an attribute back to
+    its original value via the options flow (fix for issue #45).
+    """
+    return {
+        k: v
+        for k, v in user_input.items()
+        if v is not None
+        and k in MODIFIABLE_ATTRIBUTES[modification_type]
+    }
+
+
 class DeviceToolsConfigFlow(ConfigFlow, domain=DOMAIN):
     """Device Tools config flow."""
 
@@ -713,9 +731,8 @@ class OptionsFlowHandler(OptionsFlow):
             )
 
         if modification_type in [ModificationType.DEVICE, ModificationType.ENTITY]:
-            modification_data = _user_input_to_modification_data(
+            modification_data = _options_flow_user_input_to_modification_data(
                 user_input,
-                modification_original_data,
                 modification_type,
             )
         elif modification_type == ModificationType.MERGE:
