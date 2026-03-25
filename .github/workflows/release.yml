@@ -1,9 +1,7 @@
 name: Release
 
 on:
-  push:
-    branches:
-      - 1.x
+  workflow_dispatch:
 
 jobs:
   semantic-release:
@@ -25,7 +23,7 @@ jobs:
       - name: Inject version into manifest
         if: steps.semantic.outputs.new_release_published == 'true'
         run: |
-          sed -i 's/"version": "0.0.0"/"version": "${{ steps.semantic.outputs.new_release_version }}"/' \
+          sed -i 's/"version": "0.0.0-dev"/"version": "${{ steps.semantic.outputs.new_release_version }}"/' \
             custom_components/device_tools/manifest.json
 
       - name: Create zip
