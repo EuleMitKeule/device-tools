@@ -7,6 +7,8 @@ jobs:
   semantic-release:
     runs-on: ubuntu-latest
     concurrency: release
+    permissions:
+      contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -34,9 +36,7 @@ jobs:
 
       - name: Upload zip to release
         if: steps.semantic.outputs.new_release_published == 'true'
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.semantic.outputs.new_release_version }}
-          files: device_tools.zip
+        run: |
+          gh release upload ${{ steps.semantic.outputs.new_release_version }} device_tools.zip
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.PAT }}
