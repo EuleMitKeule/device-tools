@@ -1,7 +1,8 @@
 {
-  "repository_url": "https://github.com/eulemitkeule/home-automations.git",
+  "repository_url": "https://github.com/eulemitkeule/device-tools.git",
   "branches": [
-    "master"
+    "master",
+    "1.x"
   ],
   "plugins": [
     "@semantic-release/commit-analyzer",
