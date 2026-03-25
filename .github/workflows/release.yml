@@ -3,7 +3,7 @@ name: Release
 on:
   push:
     branches:
-      - master
+      - 1.x
 
 jobs:
   semantic-release:
@@ -17,6 +17,28 @@ jobs:
           persist-credentials: false
 
       - name: Semantic Release
+        id: semantic
         uses: cycjimmy/semantic-release-action@v3
+        env:
+          GITHUB_TOKEN: ${{ secrets.PAT }}
+
+      - name: Inject version into manifest
+        if: steps.semantic.outputs.new_release_published == 'true'
+        run: |
+          sed -i 's/"version": "0.0.0"/"version": "${{ steps.semantic.outputs.new_release_version }}"/' \
+            custom_components/device_tools/manifest.json
+
+      - name: Create zip
+        if: steps.semantic.outputs.new_release_published == 'true'
+        run: |
+          cd custom_components
+          zip -r ../device_tools.zip device_tools/
+
+      - name: Upload zip to release
+        if: steps.semantic.outputs.new_release_published == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.semantic.outputs.new_release_version }}
+          files: device_tools.zip
         env:
           GITHUB_TOKEN: ${{ secrets.PAT }}
