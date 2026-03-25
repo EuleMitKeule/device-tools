@@ -39,4 +39,4 @@ jobs:
           tag_name: ${{ steps.semantic.outputs.new_release_version }}
           files: device_tools.zip
         env:
-          GITHUB_TOKEN: ${{ secrets.PAT }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
