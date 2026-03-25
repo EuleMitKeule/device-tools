@@ -367,9 +367,18 @@ def _user_input_to_modification_data(
     if modification_original_data is None:
         modification_original_data = {}
 
+    # Attributes are nested inside a section wrapper in the form schema.
+    match modification_type:
+        case ModificationType.DEVICE:
+            attributes = user_input.get(CONF_DEVICE_ATTRIBUTES, {})
+        case ModificationType.ENTITY:
+            attributes = user_input.get(CONF_ENTITY_ATTRIBUTES, {})
+        case _:
+            attributes = {}
+
     return {
         k: v
-        for k, v in user_input.items()
+        for k, v in attributes.items()
         if v is not None
         and v != modification_original_data.get(k)
         and k in MODIFIABLE_ATTRIBUTES[modification_type]
@@ -386,11 +395,19 @@ def _options_flow_user_input_to_modification_data(
     that match the original data. This allows resetting an attribute back to
     its original value via the options flow (fix for issue #45).
     """
+    # Attributes are nested inside a section wrapper in the form schema.
+    match modification_type:
+        case ModificationType.DEVICE:
+            attributes = user_input.get(CONF_DEVICE_ATTRIBUTES, {})
+        case ModificationType.ENTITY:
+            attributes = user_input.get(CONF_ENTITY_ATTRIBUTES, {})
+        case _:
+            attributes = {}
+
     return {
         k: v
-        for k, v in user_input.items()
-        if v is not None
-        and k in MODIFIABLE_ATTRIBUTES[modification_type]
+        for k, v in attributes.items()
+        if v is not None and k in MODIFIABLE_ATTRIBUTES[modification_type]
     }
 
 
