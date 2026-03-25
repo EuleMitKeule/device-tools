@@ -171,7 +171,7 @@ class DeviceTools:
         entities: set[str] = set()
         merged_devices: set[str] = set()
 
-        for device_modification in device_modifications.values():
+        for entry_id, device_modification in device_modifications.items():
             if device_modification["entity_modification"] is not None:
                 unknown_entities: list[str] = []
                 duplicate_entities: list[str] = []
@@ -205,6 +205,19 @@ class DeviceTools:
                     device_modification["entity_modification"]["entities"].remove(
                         entity_id
                     )
+
+                if unknown_entities or duplicate_entities:
+                    config_entry = self._hass.config_entries.async_get_entry(
+                        entry_id
+                    )
+                    if config_entry is not None:
+                        self._hass.config_entries.async_update_entry(
+                            config_entry,
+                            data={
+                                **config_entry.data,
+                                "device_modification": device_modification,
+                            },
+                        )
 
             if device_modification["merge_modification"] is not None:
                 unknown_devices: list[str] = []
@@ -251,6 +264,19 @@ class DeviceTools:
                     device_modification["merge_modification"]["devices"].remove(
                         merged_device_id
                     )
+
+                if unknown_devices or duplicate_devices:
+                    config_entry = self._hass.config_entries.async_get_entry(
+                        entry_id
+                    )
+                    if config_entry is not None:
+                        self._hass.config_entries.async_update_entry(
+                            config_entry,
+                            data={
+                                **config_entry.data,
+                                "device_modification": device_modification,
+                            },
+                        )
 
     async def _async_save_original_device_config(self, device_id: str) -> None:
         """Save original device config."""
