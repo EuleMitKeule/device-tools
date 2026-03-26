@@ -45,13 +45,7 @@ from .const import (
     MODIFIABLE_ATTRIBUTES,
     ModificationType,
 )
-from .utils import (
-    check_merge_conflicts,
-    get_default_config_entry_title,
-    is_entity_in_merge_modification,
-    name_for_device,
-    name_for_entity,
-)
+from .utils import get_default_config_entry_title, name_for_device, name_for_entity
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -464,7 +458,9 @@ def _options_flow_user_input_to_modification_data(
         entity_assignment = user_input.get(CONF_ENTITY_ASSIGNMENT, {})
         # Always store CONF_ASSIGNED_ENTITIES (even as []) so the user can
         # clear a previously saved bulk assignment via the options flow.
-        result[CONF_ASSIGNED_ENTITIES] = entity_assignment.get(CONF_ASSIGNED_ENTITIES) or []
+        result[CONF_ASSIGNED_ENTITIES] = (
+            entity_assignment.get(CONF_ASSIGNED_ENTITIES) or []
+        )
 
     return result
 
@@ -600,19 +596,13 @@ class DeviceToolsConfigFlow(ConfigFlow, domain=DOMAIN):
 
         merge_device_ids: list[str] = user_input.get(CONF_MERGE_DEVICE_IDS, [])
 
-        if self._modification_entry_id in merge_device_ids:
-            return self.async_show_form(
-                step_id="merge_device",
-                data_schema=_get_merge_schema(),
-                errors={"base": "cannot_merge_into_itself"},
-            )
-
-        if check_merge_conflicts(self.hass, merge_device_ids):
-            return self.async_show_form(
-                step_id="merge_device",
-                data_schema=_get_merge_schema(),
-                errors={"base": "entity_has_modification"},
-            )
+        # Prevent selecting the target device itself as a merge source
+        if self._modification_entry_id:
+            merge_device_ids = [
+                merge_device_id
+                for merge_device_id in merge_device_ids
+                if merge_device_id != self._modification_entry_id
+            ]
 
         for merge_device_id in merge_device_ids:
             device = self._device_registry.async_get(merge_device_id)
@@ -689,19 +679,6 @@ class DeviceToolsConfigFlow(ConfigFlow, domain=DOMAIN):
         entity = self._entity_registry.async_get(self._modification_entry_id)
         if entity is None:
             return self.async_abort(reason="entry_not_found")
-
-        if is_entity_in_merge_modification(self.hass, self._modification_entry_id):
-            return self.async_show_form(
-                step_id="modify_entity",
-                data_schema=_get_options_schema(
-                    self._modification_type,
-                    self._modification_entry_id,
-                    {},
-                    {},
-                    self.hass,
-                ),
-                errors={"base": "entity_in_merge"},
-            )
 
         modification_original_data = entity.extended_dict
 

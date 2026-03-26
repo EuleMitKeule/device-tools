@@ -36,25 +36,23 @@ from .const import (
     ModificationType,
 )
 from .data import DATA_KEY, DeviceToolsData
-from .device_listener import DeviceListener
-from .device_modification import DeviceModification
-from .entity_listener import EntityListener
-from .entity_modification import EntityModification
-from .merge_modification import MergeModification
+from .engine import ModificationEngine
+from .original_data_store import OriginalDataStore
 from .utils import get_default_config_entry_title, name_for_device, name_for_entity
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 _LOGGER = logging.getLogger(__name__)
 
 
-def setup(hass: HomeAssistant, _config: ConfigType) -> bool:
+async def async_setup(hass: HomeAssistant, _config: ConfigType) -> bool:
     """Set up the device tools component."""
     _LOGGER.debug("Setting up Device Tools")
 
-    hass.data[DATA_KEY] = DeviceToolsData(
-        device_listener=DeviceListener(hass),
-        entity_listener=EntityListener(hass),
-    )
+    store = OriginalDataStore(hass)
+    engine = ModificationEngine(hass, store)
+    hass.data[DATA_KEY] = DeviceToolsData(engine=engine, store=store)
+
+    await engine.async_start()
     return True
 
 
@@ -103,42 +101,66 @@ async def async_setup_entry(
             },
         )
 
-    modification: DeviceModification | EntityModification | MergeModification
-    match modification_type:
-        case ModificationType.DEVICE:
-            modification = DeviceModification(
-                hass,
-                config_entry,
-                device_tools_data.device_listener,
-                entity_listener=device_tools_data.entity_listener,
-            )
-        case ModificationType.ENTITY:
-            modification = EntityModification(
-                hass,
-                config_entry,
-                device_tools_data.entity_listener,
-            )
-        case ModificationType.MERGE:
-            modification = MergeModification(
-                hass,
-                config_entry,
-                device_tools_data.device_listener,
-                device_tools_data.entity_listener,
-            )
+    # Seed the OriginalDataStore from config entry data if present
+    await _async_seed_store_from_config_entry(
+        config_entry, device_tools_data.store
+    )
 
-    device_tools_data.modifications[config_entry.unique_id] = modification
+    await device_tools_data.engine.async_on_entry_loaded(config_entry)
 
     config_entry.async_on_unload(config_entry.add_update_listener(update_listener))
 
-    await modification.apply()
     return True
+
+
+async def _async_seed_store_from_config_entry(
+    config_entry: ConfigEntry[Any],
+    store: OriginalDataStore,
+) -> None:
+    """Seed the OriginalDataStore from CONF_MODIFICATION_ORIGINAL_DATA if present.
+
+    This handles the transition from the old architecture where original data
+    was stored per-config-entry to the new central store.
+    """
+    original_data = config_entry.data.get(CONF_MODIFICATION_ORIGINAL_DATA)
+    if not original_data:
+        return
+
+    mod_type = ModificationType(config_entry.data[CONF_MODIFICATION_TYPE])
+    mod_entry_id: str = config_entry.data[CONF_MODIFICATION_ENTRY_ID]
+
+    if mod_type == ModificationType.DEVICE:
+        device_data = {
+            k: v
+            for k, v in original_data.items()
+            if k in MODIFIABLE_ATTRIBUTES[ModificationType.DEVICE]
+        }
+        if device_data:
+            await store.async_set_device(mod_entry_id, device_data)
+
+    elif mod_type == ModificationType.ENTITY:
+        entity_data = {
+            k: v
+            for k, v in original_data.items()
+            if k in MODIFIABLE_ATTRIBUTES[ModificationType.ENTITY]
+            or k == CONF_DEVICE_ID
+        }
+        if entity_data:
+            await store.async_set_entity(mod_entry_id, entity_data)
+
+    elif mod_type == ModificationType.MERGE:
+        for device_data in original_data.values():
+            entities: dict[str, dict[str, Any]] = device_data.get(CONF_ENTITIES, {})
+            for entity_id, entity_original in entities.items():
+                await store.async_set_entity(entity_id, entity_original)
 
 
 async def update_listener(hass: HomeAssistant, config_entry: ConfigEntry[Any]) -> None:
     """Handle options update."""
     _LOGGER.debug("Updating Device Tools config entry %s", config_entry.entry_id)
 
-    await hass.config_entries.async_reload(config_entry.entry_id)
+    device_tools_data: DeviceToolsData = hass.data[DATA_KEY]
+    await device_tools_data.engine.async_on_entry_updated(config_entry)
 
 
 async def async_unload_entry(
@@ -160,10 +182,8 @@ async def async_unload_entry(
     modification_is_custom_entry: bool = config_entry.data[
         CONF_MODIFICATION_IS_CUSTOM_ENTRY
     ]
-    modification = device_tools_data.modifications.pop(config_entry.unique_id)
 
-    if modification:
-        await modification.revert()
+    await device_tools_data.engine.async_on_entry_unloaded(config_entry)
 
     if modification_is_custom_entry:
         _LOGGER.debug(

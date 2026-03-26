@@ -26,7 +26,6 @@ CONF_VIA_DEVICE_ID = "via_device_id"
 CONF_DEVICE_ID = "device_id"
 
 CONF_ASSIGNED_ENTITIES = "assigned_entities"
-CONF_ENTITY_ORIGINAL_DEVICE_IDS = "_entity_original_device_ids"
 
 CONF_MERGE_DEVICE_IDS = "merge_device_ids"
 CONF_ENTITIES = "entities"
