@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import logging
 from abc import ABC, abstractmethod
 from collections.abc import Callable
+import logging
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
@@ -89,7 +89,6 @@ class EntityHandler(EntryHandler):
         """
         await self.async_stop_listening()
         try:
-            original = self._get_original_data()
             merged: dict[str, Any] = {}
 
             for entry in config_entries:
@@ -100,7 +99,10 @@ class EntityHandler(EntryHandler):
                 if mod_type == ModificationType.MERGE:
                     merged[CONF_DEVICE_ID] = mod_entry_id
                 elif mod_type == ModificationType.DEVICE:
-                    if CONF_ASSIGNED_ENTITIES in mod_data and self._entry_id in mod_data.get(CONF_ASSIGNED_ENTITIES, []):
+                    if (
+                        CONF_ASSIGNED_ENTITIES in mod_data
+                        and self._entry_id in mod_data.get(CONF_ASSIGNED_ENTITIES, [])
+                    ):
                         merged[CONF_DEVICE_ID] = mod_entry_id
                 elif mod_type == ModificationType.ENTITY:
                     merged.update(mod_data)
@@ -108,10 +110,14 @@ class EntityHandler(EntryHandler):
             if not merged:
                 return
 
-            update_kwargs: dict[str, Any] = {}
-            for key, value in merged.items():
-                if key in MODIFIABLE_ATTRIBUTES[ModificationType.ENTITY] or key == CONF_DEVICE_ID:
-                    update_kwargs[key] = value
+            update_kwargs: dict[str, Any] = {
+                key: value
+                for key, value in merged.items()
+                if (
+                    key in MODIFIABLE_ATTRIBUTES[ModificationType.ENTITY]
+                    or key == CONF_DEVICE_ID
+                )
+            }
 
             if not update_kwargs:
                 return
@@ -145,7 +151,8 @@ class EntityHandler(EntryHandler):
             revert_kwargs: dict[str, Any] = {
                 k: v
                 for k, v in original.items()
-                if k in MODIFIABLE_ATTRIBUTES[ModificationType.ENTITY] or k == CONF_DEVICE_ID
+                if k in MODIFIABLE_ATTRIBUTES[ModificationType.ENTITY]
+                or k == CONF_DEVICE_ID
             }
             if revert_kwargs:
                 _LOGGER.debug(
@@ -185,11 +192,7 @@ class EntityHandler(EntryHandler):
 
         changes: dict[str, Any] = event.data.get("changes", {})
         new_data = entity.extended_dict
-        external_changes = {
-            key: new_data[key]
-            for key in changes
-            if key in new_data
-        }
+        external_changes = {key: new_data[key] for key in changes if key in new_data}
 
         if external_changes:
             await self._store.async_update_entity(self._entry_id, external_changes)
@@ -217,38 +220,34 @@ class DeviceHandler(EntryHandler):
         """
         await self.async_stop_listening()
         try:
-            merged: dict[str, Any] = {}
-
-            for entry in config_entries:
-                mod_type = ModificationType(entry.data[CONF_MODIFICATION_TYPE])
-                mod_data: dict[str, Any] = entry.options.get(CONF_MODIFICATION_DATA, {})
-
-                if mod_type == ModificationType.MERGE:
-                    # Reserved for future device attribute writes from merge
-                    pass
-                elif mod_type == ModificationType.DEVICE:
-                    device_attrs = {
-                        k: v
-                        for k, v in mod_data.items()
-                        if k in MODIFIABLE_ATTRIBUTES[ModificationType.DEVICE]
-                    }
-                    merged.update(device_attrs)
-
-            if not merged:
-                return
-
             device_registry = dr.async_get(self._hass)
             device = device_registry.async_get(self._entry_id)
             if device is None:
                 _LOGGER.warning("Device %s not found, cannot apply", self._entry_id)
                 return
 
-            _LOGGER.debug(
-                "Applying device modifications to %s: %s",
-                self._entry_id,
-                merged,
-            )
-            device_registry.async_update_device(self._entry_id, **merged)
+            for entry in config_entries:
+                device_registry.async_update_device(
+                    self._entry_id,
+                    add_config_entry_id=entry.entry_id,
+                )
+
+            merged: dict[str, Any] = {
+                k: v
+                for entry in config_entries
+                if ModificationType(entry.data[CONF_MODIFICATION_TYPE])
+                == ModificationType.DEVICE
+                for k, v in entry.options.get(CONF_MODIFICATION_DATA, {}).items()
+                if k in MODIFIABLE_ATTRIBUTES[ModificationType.DEVICE]
+            }
+
+            if merged:
+                _LOGGER.debug(
+                    "Applying device modifications to %s: %s",
+                    self._entry_id,
+                    merged,
+                )
+                device_registry.async_update_device(self._entry_id, **merged)
         finally:
             await self.async_start_listening()
 
@@ -275,6 +274,17 @@ class DeviceHandler(EntryHandler):
                     revert_kwargs,
                 )
                 device_registry.async_update_device(self._entry_id, **revert_kwargs)
+
+            # Remove each DT config entry from the device.
+            # Guard against removing the last config entry — that would delete the device.
+            for entry in self._get_active_entries():
+                current = device_registry.async_get(self._entry_id)
+                if current is None or len(current.config_entries) <= 1:
+                    break
+                device_registry.async_update_device(
+                    self._entry_id,
+                    remove_config_entry_id=entry.entry_id,
+                )
         finally:
             await self.async_start_listening()
 
@@ -306,11 +316,7 @@ class DeviceHandler(EntryHandler):
 
         changes: dict[str, Any] = event.data.get("changes", {})
         new_data = device.dict_repr
-        external_changes = {
-            key: new_data[key]
-            for key in changes
-            if key in new_data
-        }
+        external_changes = {key: new_data[key] for key in changes if key in new_data}
 
         if external_changes:
             await self._store.async_update_device(self._entry_id, external_changes)

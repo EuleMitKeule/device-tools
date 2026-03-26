@@ -1,6 +1,6 @@
 """HASS data definitions for device_tools."""
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from homeassistant.util.hass_dict import HassKey
 

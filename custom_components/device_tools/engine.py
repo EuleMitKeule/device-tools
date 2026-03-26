@@ -19,7 +19,7 @@ from .const import (
     MODIFIABLE_ATTRIBUTES,
     ModificationType,
 )
-from .entry_handler import DeviceHandler, EntityHandler
+from .entry_handler import DeviceHandler, EntityHandler, EntryHandler
 from .original_data_store import OriginalDataStore
 
 _LOGGER = logging.getLogger(__name__)
@@ -94,7 +94,9 @@ class ModificationEngine:
                     self._hass,
                     entity_id,
                     self._store,
-                    get_active_entries=lambda eid=entity_id: self.get_entries_for_entity(eid),
+                    get_active_entries=lambda eid=entity_id: (
+                        self.get_entries_for_entity(eid)
+                    ),
                 )
 
             if self._store.get_entity(entity_id) is None:
@@ -104,7 +106,6 @@ class ModificationEngine:
                         k: v
                         for k, v in entity.extended_dict.items()
                         if k in MODIFIABLE_ATTRIBUTES[ModificationType.ENTITY]
-                        or k == "device_id"
                     }
                     await self._store.async_set_entity(entity_id, original)
 
@@ -115,7 +116,9 @@ class ModificationEngine:
                     self._hass,
                     device_id,
                     self._store,
-                    get_active_entries=lambda did=device_id: self.get_entries_for_device(did),
+                    get_active_entries=lambda did=device_id: (
+                        self.get_entries_for_device(did)
+                    ),
                 )
 
             if self._store.get_device(device_id) is None:
@@ -128,6 +131,7 @@ class ModificationEngine:
                     }
                     await self._store.async_set_device(device_id, original)
 
+        handler: EntryHandler
         # Apply all relevant entries and start listening
         for entity_id in affected_entity_ids:
             handler = self._entity_handlers[entity_id]
@@ -264,9 +268,9 @@ class ModificationEngine:
 
         if mod_type == ModificationType.ENTITY:
             return [config_entry.data[CONF_MODIFICATION_ENTRY_ID]]
-        elif mod_type == ModificationType.DEVICE:
+        if mod_type == ModificationType.DEVICE:
             return list(mod_data.get(CONF_ASSIGNED_ENTITIES, []))
-        elif mod_type == ModificationType.MERGE:
+        if mod_type == ModificationType.MERGE:
             original_data = config_entry.data.get(CONF_MODIFICATION_ORIGINAL_DATA, {})
             entity_ids: list[str] = []
             for device_data in original_data.values():
@@ -286,7 +290,7 @@ class ModificationEngine:
 
         if mod_type == ModificationType.DEVICE:
             return [config_entry.data[CONF_MODIFICATION_ENTRY_ID]]
-        elif mod_type == ModificationType.MERGE:
+        if mod_type == ModificationType.MERGE:
             original_data = config_entry.data.get(CONF_MODIFICATION_ORIGINAL_DATA, {})
             device_ids = [config_entry.data[CONF_MODIFICATION_ENTRY_ID]]
             device_ids.extend(original_data.keys())

@@ -102,7 +102,9 @@ async def async_setup_entry(
         )
 
     # Seed the OriginalDataStore from config entry data if present
-    await _async_seed_store_from_config_entry(hass, config_entry, device_tools_data.store)
+    await _async_seed_store_from_config_entry(
+        hass, config_entry, device_tools_data.store
+    )
 
     await device_tools_data.engine.async_on_entry_loaded(config_entry)
 
@@ -141,13 +143,14 @@ async def _async_seed_store_from_config_entry(
         entity_data = {
             k: v
             for k, v in original_data.items()
-            if k in MODIFIABLE_ATTRIBUTES[ModificationType.ENTITY] or k == CONF_DEVICE_ID
+            if k in MODIFIABLE_ATTRIBUTES[ModificationType.ENTITY]
+            or k == CONF_DEVICE_ID
         }
         if entity_data:
             await store.async_set_entity(mod_entry_id, entity_data)
 
     elif mod_type == ModificationType.MERGE:
-        for merge_device_id, device_data in original_data.items():
+        for device_data in original_data.values():
             entities: dict[str, dict[str, Any]] = device_data.get(CONF_ENTITIES, {})
             for entity_id, entity_original in entities.items():
                 await store.async_set_entity(entity_id, entity_original)

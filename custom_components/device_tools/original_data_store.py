@@ -62,14 +62,18 @@ class OriginalDataStore:
         self._devices[device_id] = data
         await self.async_save()
 
-    async def async_update_entity(self, entity_id: str, changes: dict[str, Any]) -> None:
+    async def async_update_entity(
+        self, entity_id: str, changes: dict[str, Any]
+    ) -> None:
         """Merge changes into existing original entity data. Persists."""
         if entity_id not in self._entities:
             return
         self._entities[entity_id].update(changes)
         await self.async_save()
 
-    async def async_update_device(self, device_id: str, changes: dict[str, Any]) -> None:
+    async def async_update_device(
+        self, device_id: str, changes: dict[str, Any]
+    ) -> None:
         """Merge changes into existing original device data. Persists."""
         if device_id not in self._devices:
             return
