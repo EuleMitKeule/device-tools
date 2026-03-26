@@ -5,18 +5,16 @@ from dataclasses import dataclass, field
 from homeassistant.util.hass_dict import HassKey
 
 from .const import DOMAIN
-from .device_listener import DeviceListener
-from .entity_listener import EntityListener
-from .modification import Modification
+from .engine import ModificationEngine
+from .original_data_store import OriginalDataStore
 
 
 @dataclass(slots=True)
 class DeviceToolsData:
     """Runtime data."""
 
-    device_listener: DeviceListener
-    entity_listener: EntityListener
-    modifications: dict[str, Modification] = field(default_factory=dict)
+    engine: ModificationEngine
+    store: OriginalDataStore
 
 
 DATA_KEY: HassKey[DeviceToolsData] = HassKey(DOMAIN)
