@@ -103,7 +103,7 @@ async def async_setup_entry(
 
     # Seed the OriginalDataStore from config entry data if present
     await _async_seed_store_from_config_entry(
-        hass, config_entry, device_tools_data.store
+        config_entry, device_tools_data.store
     )
 
     await device_tools_data.engine.async_on_entry_loaded(config_entry)
@@ -114,7 +114,6 @@ async def async_setup_entry(
 
 
 async def _async_seed_store_from_config_entry(
-    hass: HomeAssistant,
     config_entry: ConfigEntry[Any],
     store: OriginalDataStore,
 ) -> None:

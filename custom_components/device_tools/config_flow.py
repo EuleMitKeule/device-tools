@@ -596,6 +596,14 @@ class DeviceToolsConfigFlow(ConfigFlow, domain=DOMAIN):
 
         merge_device_ids: list[str] = user_input.get(CONF_MERGE_DEVICE_IDS, [])
 
+        # Prevent selecting the target device itself as a merge source
+        if self._modification_entry_id:
+            merge_device_ids = [
+                merge_device_id
+                for merge_device_id in merge_device_ids
+                if merge_device_id != self._modification_entry_id
+            ]
+
         for merge_device_id in merge_device_ids:
             device = self._device_registry.async_get(merge_device_id)
             if device is None:

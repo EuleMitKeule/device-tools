@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import logging
 from typing import Any
 
@@ -19,7 +20,7 @@ from .const import (
     MODIFIABLE_ATTRIBUTES,
     ModificationType,
 )
-from .entry_handler import DeviceHandler, EntityHandler, EntryHandler
+from .entry_handler import DeviceHandler, EntityHandler
 from .original_data_store import OriginalDataStore
 
 _LOGGER = logging.getLogger(__name__)
@@ -42,6 +43,12 @@ class ModificationEngine:
         # Tracked config entries keyed by entry_id
         self._tracked_entries: dict[str, ConfigEntry[Any]] = {}
 
+        # Snapshots of affected IDs at load time, keyed by entry_id.
+        # Used in async_on_entry_updated to detect removals even though
+        # HA mutates ConfigEntry objects in-place.
+        self._tracked_entity_ids: dict[str, set[str]] = {}
+        self._tracked_device_ids: dict[str, set[str]] = {}
+
         # Handler instances keyed by entity_id / device_id
         self._entity_handlers: dict[str, EntityHandler] = {}
         self._device_handlers: dict[str, DeviceHandler] = {}
@@ -52,23 +59,25 @@ class ModificationEngine:
 
     async def async_stop(self) -> None:
         """Revert all handlers, stop all listeners, clear state."""
-        for handler in list(self._entity_handlers.values()):
+        for entity_handler in list(self._entity_handlers.values()):
             try:
-                await handler.async_revert()
+                await entity_handler.async_revert()
             except Exception:
-                _LOGGER.exception("Error reverting entity handler %s", handler.entry_id)
-            await handler.async_stop_listening()
+                _LOGGER.exception("Error reverting entity handler %s", entity_handler.entry_id)
+            await entity_handler.async_stop_listening()
 
-        for handler in list(self._device_handlers.values()):
+        for device_handler in list(self._device_handlers.values()):
             try:
-                await handler.async_revert()
+                await device_handler.async_revert()
             except Exception:
-                _LOGGER.exception("Error reverting device handler %s", handler.entry_id)
-            await handler.async_stop_listening()
+                _LOGGER.exception("Error reverting device handler %s", device_handler.entry_id)
+            await device_handler.async_stop_listening()
 
         self._entity_handlers.clear()
         self._device_handlers.clear()
         self._tracked_entries.clear()
+        self._tracked_entity_ids.clear()
+        self._tracked_device_ids.clear()
 
     async def async_on_entry_loaded(self, config_entry: ConfigEntry[Any]) -> None:
         """Handle a config entry being set up.
@@ -84,6 +93,11 @@ class ModificationEngine:
         affected_entity_ids = self._get_affected_entity_ids(config_entry)
         affected_device_ids = self._get_affected_device_ids(config_entry)
 
+        # Store snapshots of affected IDs so async_on_entry_updated can detect
+        # removals even when HA mutates ConfigEntry objects in-place.
+        self._tracked_entity_ids[config_entry.entry_id] = set(affected_entity_ids)
+        self._tracked_device_ids[config_entry.entry_id] = set(affected_device_ids)
+
         entity_registry = er.async_get(self._hass)
         device_registry = dr.async_get(self._hass)
 
@@ -94,8 +108,8 @@ class ModificationEngine:
                     self._hass,
                     entity_id,
                     self._store,
-                    get_active_entries=lambda eid=entity_id: (
-                        self.get_entries_for_entity(eid)
+                    get_active_entries=functools.partial(
+                        self.get_entries_for_entity, entity_id
                     ),
                 )
 
@@ -116,8 +130,8 @@ class ModificationEngine:
                     self._hass,
                     device_id,
                     self._store,
-                    get_active_entries=lambda did=device_id: (
-                        self.get_entries_for_device(did)
+                    get_active_entries=functools.partial(
+                        self.get_entries_for_device, device_id
                     ),
                 )
 
@@ -131,19 +145,20 @@ class ModificationEngine:
                     }
                     await self._store.async_set_device(device_id, original)
 
-        handler: EntryHandler
+        entity_handler: EntityHandler
+        device_handler: DeviceHandler
         # Apply all relevant entries and start listening
         for entity_id in affected_entity_ids:
-            handler = self._entity_handlers[entity_id]
+            entity_handler = self._entity_handlers[entity_id]
             entries = self.get_entries_for_entity(entity_id)
-            await handler.async_apply(entries)
-            await handler.async_start_listening()
+            await entity_handler.async_apply(entries)
+            await entity_handler.async_start_listening()
 
         for device_id in affected_device_ids:
-            handler = self._device_handlers[device_id]
+            device_handler = self._device_handlers[device_id]
             entries = self.get_entries_for_device(device_id)
-            await handler.async_apply(entries)
-            await handler.async_start_listening()
+            await device_handler.async_apply(entries)
+            await device_handler.async_start_listening()
 
     async def async_on_entry_unloaded(self, config_entry: ConfigEntry[Any]) -> None:
         """Handle config entry unload.
@@ -156,21 +171,26 @@ class ModificationEngine:
         affected_entity_ids = self._get_affected_entity_ids(config_entry)
         affected_device_ids = self._get_affected_device_ids(config_entry)
 
+        entity_handler: EntityHandler | None
+        device_handler: DeviceHandler | None
+
         # Revert affected handlers
         for entity_id in affected_entity_ids:
-            handler = self._entity_handlers.get(entity_id)
-            if handler:
-                await handler.async_revert()
-                await handler.async_stop_listening()
+            entity_handler = self._entity_handlers.get(entity_id)
+            if entity_handler:
+                await entity_handler.async_revert()
+                await entity_handler.async_stop_listening()
 
         for device_id in affected_device_ids:
-            handler = self._device_handlers.get(device_id)
-            if handler:
-                await handler.async_revert()
-                await handler.async_stop_listening()
+            device_handler = self._device_handlers.get(device_id)
+            if device_handler:
+                await device_handler.async_revert()
+                await device_handler.async_stop_listening()
 
         # Remove from tracking
         self._tracked_entries.pop(config_entry.entry_id, None)
+        self._tracked_entity_ids.pop(config_entry.entry_id, None)
+        self._tracked_device_ids.pop(config_entry.entry_id, None)
 
         # Clean up handlers that are no longer needed
         for entity_id in affected_entity_ids:
@@ -180,10 +200,10 @@ class ModificationEngine:
                 await self._store.async_remove_entity(entity_id)
             else:
                 # Re-apply remaining entries
-                handler = self._entity_handlers.get(entity_id)
-                if handler:
-                    await handler.async_apply(remaining)
-                    await handler.async_start_listening()
+                entity_handler = self._entity_handlers.get(entity_id)
+                if entity_handler:
+                    await entity_handler.async_apply(remaining)
+                    await entity_handler.async_start_listening()
 
         for device_id in affected_device_ids:
             remaining = self.get_entries_for_device(device_id)
@@ -191,10 +211,10 @@ class ModificationEngine:
                 self._device_handlers.pop(device_id, None)
                 await self._store.async_remove_device(device_id)
             else:
-                handler = self._device_handlers.get(device_id)
-                if handler:
-                    await handler.async_apply(remaining)
-                    await handler.async_start_listening()
+                device_handler = self._device_handlers.get(device_id)
+                if device_handler:
+                    await device_handler.async_apply(remaining)
+                    await device_handler.async_start_listening()
 
     async def async_on_entry_updated(self, config_entry: ConfigEntry[Any]) -> None:
         """Handle options/data change for a config entry.
@@ -203,13 +223,15 @@ class ModificationEngine:
         2. Update engine's tracking
         3. Re-apply all affected handlers
         """
-        # Collect old affected ids before updating tracking
-        old_entry = self._tracked_entries.get(config_entry.entry_id)
-        old_entity_ids: set[str] = set()
-        old_device_ids: set[str] = set()
-        if old_entry is not None:
-            old_entity_ids = set(self._get_affected_entity_ids(old_entry))
-            old_device_ids = set(self._get_affected_device_ids(old_entry))
+        # Use stored ID snapshots rather than re-computing from the old entry object,
+        # because HA mutates ConfigEntry objects in-place — the stored reference would
+        # already reflect the new state before we get here.
+        old_entity_ids: set[str] = self._tracked_entity_ids.get(
+            config_entry.entry_id, set()
+        )
+        old_device_ids: set[str] = self._tracked_device_ids.get(
+            config_entry.entry_id, set()
+        )
 
         new_entity_ids = set(self._get_affected_entity_ids(config_entry))
         new_device_ids = set(self._get_affected_device_ids(config_entry))
@@ -217,21 +239,26 @@ class ModificationEngine:
         all_entity_ids = old_entity_ids | new_entity_ids
         all_device_ids = old_device_ids | new_device_ids
 
+        entity_handler: EntityHandler | None
+        device_handler: DeviceHandler | None
+
         # Revert affected handlers
         for entity_id in all_entity_ids:
-            handler = self._entity_handlers.get(entity_id)
-            if handler:
-                await handler.async_revert()
-                await handler.async_stop_listening()
+            entity_handler = self._entity_handlers.get(entity_id)
+            if entity_handler:
+                await entity_handler.async_revert()
+                await entity_handler.async_stop_listening()
 
         for device_id in all_device_ids:
-            handler = self._device_handlers.get(device_id)
-            if handler:
-                await handler.async_revert()
-                await handler.async_stop_listening()
+            device_handler = self._device_handlers.get(device_id)
+            if device_handler:
+                await device_handler.async_revert()
+                await device_handler.async_stop_listening()
 
-        # Update tracking
+        # Update tracking with the new entry and updated snapshots
         self._tracked_entries[config_entry.entry_id] = config_entry
+        self._tracked_entity_ids[config_entry.entry_id] = new_entity_ids
+        self._tracked_device_ids[config_entry.entry_id] = new_device_ids
 
         # Re-apply
         for entity_id in all_entity_ids:
@@ -240,10 +267,10 @@ class ModificationEngine:
                 self._entity_handlers.pop(entity_id, None)
                 await self._store.async_remove_entity(entity_id)
                 continue
-            handler = self._entity_handlers.get(entity_id)
-            if handler:
-                await handler.async_apply(entries)
-                await handler.async_start_listening()
+            entity_handler = self._entity_handlers.get(entity_id)
+            if entity_handler:
+                await entity_handler.async_apply(entries)
+                await entity_handler.async_start_listening()
 
         for device_id in all_device_ids:
             entries = self.get_entries_for_device(device_id)
@@ -251,10 +278,10 @@ class ModificationEngine:
                 self._device_handlers.pop(device_id, None)
                 await self._store.async_remove_device(device_id)
                 continue
-            handler = self._device_handlers.get(device_id)
-            if handler:
-                await handler.async_apply(entries)
-                await handler.async_start_listening()
+            device_handler = self._device_handlers.get(device_id)
+            if device_handler:
+                await device_handler.async_apply(entries)
+                await device_handler.async_start_listening()
 
     def _get_affected_entity_ids(self, config_entry: ConfigEntry[Any]) -> list[str]:
         """Return entity_ids affected by this config entry.

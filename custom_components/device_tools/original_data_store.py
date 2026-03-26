@@ -12,6 +12,7 @@ _LOGGER = logging.getLogger(__name__)
 
 STORAGE_KEY = "device_tools.original_data"
 STORAGE_VERSION = 1
+SAVE_DELAY = 2.0
 
 
 class OriginalDataStore:
@@ -32,13 +33,24 @@ class OriginalDataStore:
             self._devices = data.get("devices", {})
 
     async def async_save(self) -> None:
-        """Persist current state to disk."""
+        """Persist current state to disk immediately."""
         await self._store.async_save(
             {
                 "entities": self._entities,
                 "devices": self._devices,
             }
         )
+
+    def _data_to_save(self) -> dict[str, Any]:
+        """Return current in-memory data for a delayed save."""
+        return {
+            "entities": self._entities,
+            "devices": self._devices,
+        }
+
+    def _schedule_save(self) -> None:
+        """Schedule a debounced save to avoid excessive disk writes."""
+        self._store.async_delay_save(self._data_to_save, SAVE_DELAY)
 
     def get_entity(self, entity_id: str) -> dict[str, Any] | None:
         """Return stored original data for an entity. None if not yet tracked."""
@@ -53,41 +65,41 @@ class OriginalDataStore:
         if entity_id in self._entities:
             return
         self._entities[entity_id] = data
-        await self.async_save()
+        self._schedule_save()
 
     async def async_set_device(self, device_id: str, data: dict[str, Any]) -> None:
         """Store original device data. Only call once — never overwrite existing entry."""
         if device_id in self._devices:
             return
         self._devices[device_id] = data
-        await self.async_save()
+        self._schedule_save()
 
     async def async_update_entity(
         self, entity_id: str, changes: dict[str, Any]
     ) -> None:
-        """Merge changes into existing original entity data. Persists."""
+        """Merge changes into existing original entity data. Schedules a debounced save."""
         if entity_id not in self._entities:
             return
         self._entities[entity_id].update(changes)
-        await self.async_save()
+        self._schedule_save()
 
     async def async_update_device(
         self, device_id: str, changes: dict[str, Any]
     ) -> None:
-        """Merge changes into existing original device data. Persists."""
+        """Merge changes into existing original device data. Schedules a debounced save."""
         if device_id not in self._devices:
             return
         self._devices[device_id].update(changes)
-        await self.async_save()
+        self._schedule_save()
 
     async def async_remove_entity(self, entity_id: str) -> None:
-        """Delete entity entry and persist."""
+        """Delete entity entry and schedule a debounced save."""
         if entity_id in self._entities:
             del self._entities[entity_id]
-            await self.async_save()
+            self._schedule_save()
 
     async def async_remove_device(self, device_id: str) -> None:
-        """Delete device entry and persist."""
+        """Delete device entry and schedule a debounced save."""
         if device_id in self._devices:
             del self._devices[device_id]
-            await self.async_save()
+            self._schedule_save()
