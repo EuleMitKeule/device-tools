@@ -24,6 +24,8 @@ CONF_SERIAL_NUMBER = "serial_number"
 CONF_VIA_DEVICE_ID = "via_device_id"
 
 CONF_DEVICE_ID = "device_id"
+CONF_ENTITY_CATEGORY = "entity_category"
+ENTITY_CATEGORY_OPTIONS = ["", "config", "diagnostic"]
 
 CONF_ASSIGNED_ENTITIES = "assigned_entities"
 
@@ -56,6 +58,7 @@ MODIFIABLE_ATTRIBUTES = {
     ],
     ModificationType.ENTITY: [
         CONF_DEVICE_ID,
+        CONF_ENTITY_CATEGORY,
     ],
     ModificationType.MERGE: [],
 }

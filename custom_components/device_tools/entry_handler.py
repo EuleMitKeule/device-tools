@@ -10,10 +10,12 @@ from typing import Any
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import CALLBACK_TYPE, Event, HomeAssistant
 from homeassistant.helpers import device_registry as dr, entity_registry as er
+from homeassistant.helpers.entity_registry import EntityCategory
 
 from .const import (
     CONF_ASSIGNED_ENTITIES,
     CONF_DEVICE_ID,
+    CONF_ENTITY_CATEGORY,
     CONF_MODIFICATION_DATA,
     CONF_MODIFICATION_ENTRY_ID,
     CONF_MODIFICATION_TYPE,
@@ -133,6 +135,11 @@ class EntityHandler(EntryHandler):
                 self._entry_id,
                 update_kwargs,
             )
+            if CONF_ENTITY_CATEGORY in update_kwargs:
+                raw = update_kwargs[CONF_ENTITY_CATEGORY]
+                update_kwargs[CONF_ENTITY_CATEGORY] = (
+                    EntityCategory(raw) if raw else None
+                )
             entity_registry.async_update_entity(entity.entity_id, **update_kwargs)
         finally:
             await self.async_start_listening()

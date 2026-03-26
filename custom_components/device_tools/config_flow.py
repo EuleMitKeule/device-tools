@@ -25,6 +25,7 @@ from .const import (
     CONF_ENTITIES,
     CONF_ENTITY_ASSIGNMENT,
     CONF_ENTITY_ATTRIBUTES,
+    CONF_ENTITY_CATEGORY,
     CONF_HW_VERSION,
     CONF_INFORMATION,
     CONF_MANUFACTURER,
@@ -42,6 +43,7 @@ from .const import (
     CONF_SW_VERSION,
     CONF_VIA_DEVICE_ID,
     DOMAIN,
+    ENTITY_CATEGORY_OPTIONS,
     MODIFIABLE_ATTRIBUTES,
     ModificationType,
 )
@@ -239,6 +241,15 @@ def _get_entity_options_schema(
     modification_original_data: dict[str, Any],
 ) -> vol.Schema:
     """Return the schema for an entity modification."""
+    # entity_category is stored as an EntityCategory enum (or None) in original data;
+    # convert to string for the selector default value.
+    original_entity_category = modification_original_data.get(CONF_ENTITY_CATEGORY)
+    if original_entity_category is not None:
+        original_entity_category = original_entity_category.value
+    suggested_entity_category = modification_data.get(
+        CONF_ENTITY_CATEGORY,
+        original_entity_category,
+    )
     return cast(
         vol.Schema,
         _get_base_options_schema(
@@ -261,6 +272,18 @@ def _get_entity_options_schema(
                             ): selector.DeviceSelector(
                                 selector.DeviceSelectorConfig(
                                     multiple=False,
+                                )
+                            ),
+                            vol.Optional(
+                                CONF_ENTITY_CATEGORY,
+                                description={
+                                    "suggested_value": suggested_entity_category,
+                                },
+                            ): selector.SelectSelector(
+                                selector.SelectSelectorConfig(
+                                    options=ENTITY_CATEGORY_OPTIONS,
+                                    mode=selector.SelectSelectorMode.DROPDOWN,
+                                    translation_key=CONF_ENTITY_CATEGORY,
                                 )
                             ),
                         }
@@ -416,6 +439,7 @@ def _user_input_to_modification_data(
         k: v
         for k, v in attributes.items()
         if v is not None
+        and v != ""
         and v != modification_original_data.get(k)
         and k in MODIFIABLE_ATTRIBUTES[modification_type]
     }
@@ -451,7 +475,7 @@ def _options_flow_user_input_to_modification_data(
     result = {
         k: v
         for k, v in attributes.items()
-        if v is not None and k in MODIFIABLE_ATTRIBUTES[modification_type]
+        if v is not None and v != "" and k in MODIFIABLE_ATTRIBUTES[modification_type]
     }
 
     if modification_type == ModificationType.DEVICE:

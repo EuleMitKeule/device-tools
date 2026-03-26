@@ -114,10 +114,12 @@
                         "name": "Entitätsattribute",
                         "description": "Attribute der Entität ändern",
                         "data": {
-                            "device_id": "Gerät"
+                            "device_id": "Gerät",
+                            "entity_category": "Entitätskategorie"
                         },
                         "data_description": {
-                            "device_id": "Das Gerät, zu dem diese Entität gehört"
+                            "device_id": "Das Gerät, zu dem diese Entität gehört",
+                            "entity_category": "Die Kategorie dieser Entität"
                         }
                     }
                 }
@@ -130,6 +132,13 @@
                 "device": "Gerät",
                 "entity": "Entität",
                 "merge": "Zusammenführen"
+            }
+        },
+        "entity_category": {
+            "options": {
+                "": "Standard",
+                "config": "Konfiguration",
+                "diagnostic": "Diagnose"
             }
         }
     },
@@ -184,10 +193,12 @@
                         "name": "Entitätsattribute",
                         "description": "Attribute der Entität ändern",
                         "data": {
-                            "device_id": "Gerät"
+                            "device_id": "Gerät",
+                            "entity_category": "Entitätskategorie"
                         },
                         "data_description": {
-                            "device_id": "Das Gerät, zu dem diese Entität gehört"
+                            "device_id": "Das Gerät, zu dem diese Entität gehört",
+                            "entity_category": "Die Kategorie dieser Entität"
                         }
                     },
                     "merge_options": {
