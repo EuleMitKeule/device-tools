@@ -12,9 +12,11 @@ from homeassistant.helpers import device_registry as dr, entity_registry as er
 
 from .const import (
     CONF_ASSIGNED_ENTITIES,
+    CONF_DEVICE_ID,
     CONF_ENTITIES,
     CONF_MODIFICATION_DATA,
     CONF_MODIFICATION_ENTRY_ID,
+    CONF_MODIFICATION_IS_CUSTOM_ENTRY,
     CONF_MODIFICATION_ORIGINAL_DATA,
     CONF_MODIFICATION_TYPE,
     MODIFIABLE_ATTRIBUTES,
@@ -163,11 +165,41 @@ class ModificationEngine:
     async def async_on_entry_unloaded(self, config_entry: ConfigEntry[Any]) -> None:
         """Handle config entry unload.
 
-        1. For affected handlers: revert and stop listening
-        2. Remove config entry from engine's tracking
-        3. For each affected entity/device: if no more config entries reference it,
+        1. If this is a creation-modification (modification_is_custom_entry=True),
+           detect and warn about dependent entries before removing the device.
+        2. For affected handlers: revert and stop listening
+        3. Remove config entry from engine's tracking
+        4. For each affected entity/device: if no more config entries reference it,
            remove handler and remove original_data from store
         """
+        modification_is_custom_entry: bool = config_entry.data.get(
+            CONF_MODIFICATION_IS_CUSTOM_ENTRY, False
+        )
+        mod_type = ModificationType(config_entry.data[CONF_MODIFICATION_TYPE])
+
+        if (
+            modification_is_custom_entry
+            and mod_type == ModificationType.DEVICE
+        ):
+            creation_device_id: str = config_entry.data[CONF_MODIFICATION_ENTRY_ID]
+            dependent_ids = self._find_dependent_entry_ids(
+                creation_device_id, exclude_entry_id=config_entry.entry_id
+            )
+            if dependent_ids:
+                dependent_titles = [
+                    self._tracked_entries[eid].title
+                    for eid in dependent_ids
+                    if eid in self._tracked_entries
+                ]
+                _LOGGER.warning(
+                    "Removing creation-modification device %s while %d dependent "
+                    "modification(s) still reference it: %s. "
+                    "These modifications will be re-applied without the deleted device.",
+                    creation_device_id,
+                    len(dependent_ids),
+                    dependent_titles,
+                )
+
         affected_entity_ids = self._get_affected_entity_ids(config_entry)
         affected_device_ids = self._get_affected_device_ids(config_entry)
 
@@ -215,6 +247,29 @@ class ModificationEngine:
                 if device_handler:
                     await device_handler.async_apply(remaining)
                     await device_handler.async_start_listening()
+
+        # If this was a creation-modification, re-apply all dependent entries so they
+        # are in a clean state (device-existence guards in EntityHandler will handle
+        # skipping the now-invalid device_id assignment).
+        if modification_is_custom_entry and mod_type == ModificationType.DEVICE:
+            dependent_ids = self._find_dependent_entry_ids(
+                config_entry.data[CONF_MODIFICATION_ENTRY_ID],
+                exclude_entry_id=config_entry.entry_id,
+            )
+            for dep_entry_id in dependent_ids:
+                dep_entry = self._tracked_entries.get(dep_entry_id)
+                if dep_entry is None:
+                    continue
+                dep_entity_ids = self._get_affected_entity_ids(dep_entry)
+                for entity_id in dep_entity_ids:
+                    entity_handler = self._entity_handlers.get(entity_id)
+                    if entity_handler:
+                        await entity_handler.async_revert()
+                        await entity_handler.async_stop_listening()
+                        remaining = self.get_entries_for_entity(entity_id)
+                        if remaining:
+                            await entity_handler.async_apply(remaining)
+                            await entity_handler.async_start_listening()
 
     async def async_on_entry_updated(self, config_entry: ConfigEntry[Any]) -> None:
         """Handle options/data change for a config entry.
@@ -359,3 +414,36 @@ class ModificationEngine:
             )
         )
         return result
+
+    def _find_dependent_entry_ids(
+        self, device_id: str, exclude_entry_id: str | None = None
+    ) -> list[str]:
+        """Return entry_ids of tracked modifications that reference device_id.
+
+        This finds:
+        - ENTITY modifications whose CONF_DEVICE_ID in modification_data equals device_id
+        - DEVICE modifications with CONF_ASSIGNED_ENTITIES that are assigned to device_id
+          (i.e. the modification's own entry_id is device_id)
+
+        Args:
+            device_id: The device ID to search for as a reference target.
+            exclude_entry_id: An entry_id to exclude from the results (typically the
+                creation-modification entry being unloaded).
+
+        Returns:
+            A list of config entry_ids that depend on the given device_id.
+
+        """
+        dependent: list[str] = []
+        for entry_id, entry in self._tracked_entries.items():
+            if entry_id == exclude_entry_id:
+                continue
+            mod_type = ModificationType(entry.data[CONF_MODIFICATION_TYPE])
+            mod_data: dict[str, Any] = entry.options.get(CONF_MODIFICATION_DATA, {})
+            if mod_type == ModificationType.ENTITY:
+                if mod_data.get(CONF_DEVICE_ID) == device_id:
+                    dependent.append(entry_id)
+            elif mod_type == ModificationType.DEVICE:
+                if entry.data.get(CONF_MODIFICATION_ENTRY_ID) == device_id:
+                    dependent.append(entry_id)
+        return dependent

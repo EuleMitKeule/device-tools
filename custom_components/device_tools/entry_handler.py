@@ -127,6 +127,22 @@ class EntityHandler(EntryHandler):
             if not update_kwargs:
                 return
 
+            if CONF_DEVICE_ID in update_kwargs:
+                target_device_id: str | None = update_kwargs[CONF_DEVICE_ID]
+                if target_device_id is not None:
+                    device_registry = dr.async_get(self._hass)
+                    if device_registry.async_get(target_device_id) is None:
+                        _LOGGER.warning(
+                            "Device %s referenced by entity %s no longer exists, "
+                            "skipping device_id assignment",
+                            target_device_id,
+                            self._entry_id,
+                        )
+                        update_kwargs.pop(CONF_DEVICE_ID, None)
+
+            if not update_kwargs:
+                return
+
             entity_registry = er.async_get(self._hass)
             entity = entity_registry.async_get(self._entry_id)
             if entity is None:
@@ -164,6 +180,20 @@ class EntityHandler(EntryHandler):
                 if k in MODIFIABLE_ATTRIBUTES[ModificationType.ENTITY]
                 or k == CONF_DEVICE_ID
             }
+
+            if CONF_DEVICE_ID in revert_kwargs:
+                original_device_id: str | None = revert_kwargs[CONF_DEVICE_ID]
+                if original_device_id is not None:
+                    device_registry = dr.async_get(self._hass)
+                    if device_registry.async_get(original_device_id) is None:
+                        _LOGGER.warning(
+                            "Original device %s for entity %s no longer exists, "
+                            "skipping device_id restore",
+                            original_device_id,
+                            self._entry_id,
+                        )
+                        revert_kwargs.pop(CONF_DEVICE_ID, None)
+
             if revert_kwargs:
                 _LOGGER.debug(
                     "Reverting entity %s to original data: %s",

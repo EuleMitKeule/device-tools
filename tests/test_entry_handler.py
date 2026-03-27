@@ -10,6 +10,8 @@ from homeassistant.core import Event, HomeAssistant
 from homeassistant.helpers import device_registry as dr, entity_registry as er
 
 from custom_components.device_tools.const import (
+    CONF_ASSIGNED_ENTITIES,
+    CONF_DEVICE_ID,
     CONF_MODIFICATION_DATA,
     CONF_MODIFICATION_ENTRY_ID,
     CONF_MODIFICATION_TYPE,
@@ -268,3 +270,200 @@ class TestDeviceHandlerRegistryUpdate:
             mock_store.async_update_device.assert_awaited_once_with(
                 "device_id_1", {"name_by_user": "New Name"}
             )
+
+
+# ---------------------------------------------------------------------------
+# EntityHandler.async_apply — device-existence guard (Bug 2)
+# ---------------------------------------------------------------------------
+
+
+class TestEntityHandlerApplyDeviceGuard:
+    """Tests for the device-existence guard in EntityHandler.async_apply."""
+
+    @pytest.fixture
+    def entity_handler(self, mock_hass, mock_store, mock_get_active_entries):
+        return EntityHandler(
+            mock_hass,
+            "sensor.test",
+            mock_store,
+            get_active_entries=mock_get_active_entries,
+        )
+
+    async def test_apply_skips_nonexistent_device_id(self, entity_handler, mock_hass):
+        """async_apply should skip device_id when the device no longer exists."""
+        entry = MagicMock(spec=ConfigEntry)
+        entry.data = {
+            CONF_MODIFICATION_TYPE: ModificationType.ENTITY.value,
+            CONF_MODIFICATION_ENTRY_ID: "sensor.test",
+        }
+        entry.options = {CONF_MODIFICATION_DATA: {CONF_DEVICE_ID: "deleted_device_id"}}
+
+        mock_entity = MagicMock()
+        mock_entity.entity_id = "sensor.test"
+        mock_entity_registry = MagicMock()
+        mock_entity_registry.async_get.return_value = mock_entity
+
+        mock_device_registry = MagicMock()
+        mock_device_registry.async_get.return_value = None  # device does not exist
+
+        with (
+            patch(
+                "custom_components.device_tools.entry_handler.er.async_get",
+                return_value=mock_entity_registry,
+            ),
+            patch(
+                "custom_components.device_tools.entry_handler.dr.async_get",
+                return_value=mock_device_registry,
+            ),
+        ):
+            await entity_handler.async_apply([entry])
+            # async_update_entity should NOT have been called (no valid kwargs remain)
+            mock_entity_registry.async_update_entity.assert_not_called()
+
+    async def test_apply_includes_existing_device_id(self, entity_handler, mock_hass):
+        """async_apply should include device_id when the device exists."""
+        entry = MagicMock(spec=ConfigEntry)
+        entry.data = {
+            CONF_MODIFICATION_TYPE: ModificationType.ENTITY.value,
+            CONF_MODIFICATION_ENTRY_ID: "sensor.test",
+        }
+        entry.options = {CONF_MODIFICATION_DATA: {CONF_DEVICE_ID: "valid_device_id"}}
+
+        mock_entity = MagicMock()
+        mock_entity.entity_id = "sensor.test"
+        mock_entity_registry = MagicMock()
+        mock_entity_registry.async_get.return_value = mock_entity
+
+        mock_device = MagicMock()
+        mock_device_registry = MagicMock()
+        mock_device_registry.async_get.return_value = mock_device  # device exists
+
+        with (
+            patch(
+                "custom_components.device_tools.entry_handler.er.async_get",
+                return_value=mock_entity_registry,
+            ),
+            patch(
+                "custom_components.device_tools.entry_handler.dr.async_get",
+                return_value=mock_device_registry,
+            ),
+        ):
+            await entity_handler.async_apply([entry])
+            mock_entity_registry.async_update_entity.assert_called_once_with(
+                "sensor.test", device_id="valid_device_id"
+            )
+
+    async def test_apply_device_mod_skips_nonexistent_device_id(
+        self, entity_handler, mock_hass
+    ):
+        """async_apply should skip device_id from a DEVICE mod when device is gone."""
+        entry = MagicMock(spec=ConfigEntry)
+        entry.data = {
+            CONF_MODIFICATION_TYPE: ModificationType.DEVICE.value,
+            CONF_MODIFICATION_ENTRY_ID: "deleted_device_id",
+        }
+        entry.options = {
+            CONF_MODIFICATION_DATA: {
+                CONF_ASSIGNED_ENTITIES: ["sensor.test"],
+            }
+        }
+
+        mock_entity = MagicMock()
+        mock_entity.entity_id = "sensor.test"
+        mock_entity_registry = MagicMock()
+        mock_entity_registry.async_get.return_value = mock_entity
+
+        mock_device_registry = MagicMock()
+        mock_device_registry.async_get.return_value = None  # device does not exist
+
+        with (
+            patch(
+                "custom_components.device_tools.entry_handler.er.async_get",
+                return_value=mock_entity_registry,
+            ),
+            patch(
+                "custom_components.device_tools.entry_handler.dr.async_get",
+                return_value=mock_device_registry,
+            ),
+        ):
+            await entity_handler.async_apply([entry])
+            mock_entity_registry.async_update_entity.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# EntityHandler.async_revert — device-existence guard (Bug 3)
+# ---------------------------------------------------------------------------
+
+
+class TestEntityHandlerRevertDeviceGuard:
+    """Tests for the device-existence guard in EntityHandler.async_revert."""
+
+    @pytest.fixture
+    def entity_handler(self, mock_hass, mock_get_active_entries):
+        store = MagicMock(spec=OriginalDataStore)
+        store.get_entity = MagicMock(
+            return_value={"device_id": "original_device_id", "entity_category": None}
+        )
+        return EntityHandler(
+            mock_hass,
+            "sensor.test",
+            store,
+            get_active_entries=mock_get_active_entries,
+        )
+
+    async def test_revert_skips_nonexistent_original_device_id(
+        self, entity_handler, mock_hass
+    ):
+        """async_revert should skip device_id restore when original device is gone."""
+        mock_entity = MagicMock()
+        mock_entity.entity_id = "sensor.test"
+        mock_entity_registry = MagicMock()
+        mock_entity_registry.async_get.return_value = mock_entity
+
+        mock_device_registry = MagicMock()
+        mock_device_registry.async_get.return_value = None  # original device is gone
+
+        with (
+            patch(
+                "custom_components.device_tools.entry_handler.er.async_get",
+                return_value=mock_entity_registry,
+            ),
+            patch(
+                "custom_components.device_tools.entry_handler.dr.async_get",
+                return_value=mock_device_registry,
+            ),
+        ):
+            await entity_handler.async_revert()
+            # entity_category=None is also skipped (not in MODIFIABLE_ATTRIBUTES result)
+            # The call should omit device_id
+            call_kwargs = mock_entity_registry.async_update_entity.call_args
+            if call_kwargs is not None:
+                assert CONF_DEVICE_ID not in call_kwargs.kwargs
+
+    async def test_revert_restores_existing_original_device_id(
+        self, entity_handler, mock_hass
+    ):
+        """async_revert should restore device_id when original device still exists."""
+        mock_entity = MagicMock()
+        mock_entity.entity_id = "sensor.test"
+        mock_entity_registry = MagicMock()
+        mock_entity_registry.async_get.return_value = mock_entity
+
+        mock_device = MagicMock()
+        mock_device_registry = MagicMock()
+        mock_device_registry.async_get.return_value = mock_device  # device exists
+
+        with (
+            patch(
+                "custom_components.device_tools.entry_handler.er.async_get",
+                return_value=mock_entity_registry,
+            ),
+            patch(
+                "custom_components.device_tools.entry_handler.dr.async_get",
+                return_value=mock_device_registry,
+            ),
+        ):
+            await entity_handler.async_revert()
+            call_kwargs = mock_entity_registry.async_update_entity.call_args
+            assert call_kwargs is not None
+            assert call_kwargs.kwargs.get(CONF_DEVICE_ID) == "original_device_id"
