@@ -137,6 +137,15 @@ def _get_device_options_schema(
             )
             if entity.entity_id not in already_assigned_by_us
         ]
+
+    # entry_type is stored as a DeviceEntryType enum (or None) in original data;
+    # convert to string for the selector default value.
+    original_entry_type = modification_original_data.get(CONF_ENTRY_TYPE)
+    if isinstance(original_entry_type, dr.DeviceEntryType):
+        original_entry_type = original_entry_type.value
+    suggested_entry_type = (
+        modification_data.get(CONF_ENTRY_TYPE, original_entry_type) or "none"
+    )
     return cast(
         vol.Schema,
         _get_base_options_schema(
@@ -235,14 +244,11 @@ def _get_device_options_schema(
                             vol.Optional(
                                 CONF_ENTRY_TYPE,
                                 description={
-                                    "suggested_value": modification_data.get(
-                                        CONF_ENTRY_TYPE,
-                                        modification_original_data.get(CONF_ENTRY_TYPE),
-                                    )
+                                    "suggested_value": suggested_entry_type,
                                 },
                             ): selector.SelectSelector(
                                 selector.SelectSelectorConfig(
-                                    options=["", "service"],
+                                    options=["none", "service"],
                                     mode=selector.SelectSelectorMode.DROPDOWN,
                                     translation_key=CONF_ENTRY_TYPE,
                                 )

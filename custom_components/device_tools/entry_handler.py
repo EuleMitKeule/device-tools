@@ -240,7 +240,9 @@ class DeviceHandler(EntryHandler):
             if isinstance(raw, dr.DeviceEntryType):
                 result[CONF_ENTRY_TYPE] = raw
             else:
-                result[CONF_ENTRY_TYPE] = dr.DeviceEntryType(raw) if raw else None
+                result[CONF_ENTRY_TYPE] = (
+                    dr.DeviceEntryType(raw) if raw and raw != "none" else None
+                )
 
         if CONF_CONNECTIONS in result:
             raw = result.pop(CONF_CONNECTIONS)
