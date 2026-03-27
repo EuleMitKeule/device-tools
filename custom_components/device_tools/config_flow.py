@@ -205,7 +205,7 @@ def _get_device_options_schema(
             return None
         if isinstance(value, (set, frozenset)):
             return [list(pair) for pair in value]
-        return value  # already list-of-lists from a previous form submission
+        return list(value)  # already list-of-lists from a previous form submission
 
     suggested_connections = _set_to_list(
         modification_data.get(
