@@ -70,18 +70,28 @@
                         "data": {
                             "manufacturer": "Hersteller",
                             "model": "Modell",
+                            "model_id": "Modell-ID",
                             "sw_version": "Softwareversion",
                             "hw_version": "Hardwareversion",
                             "serial_number": "Seriennummer",
-                            "via_device_id": "Übergeordnetes Gerät"
+                            "via_device_id": "Übergeordnetes Gerät",
+                            "configuration_url": "Konfigurations-URL",
+                            "entry_type": "Eintragstyp",
+                            "connections": "Verbindungen",
+                            "identifiers": "Bezeichner"
                         },
                         "data_description": {
                             "manufacturer": "Der Hersteller des Geräts",
                             "model": "Das Modell des Geräts",
+                            "model_id": "Die maschinenlesbare Modell-ID des Geräts",
                             "sw_version": "Die Softwareversion des Geräts",
                             "hw_version": "Die Hardwareversion des Geräts",
                             "serial_number": "Die Seriennummer des Geräts",
-                            "via_device_id": "Das Gerät, über das dieses Gerät verbunden ist"
+                            "via_device_id": "Das Gerät, über das dieses Gerät verbunden ist",
+                            "configuration_url": "Eine URL zur Konfigurationsoberfläche des Geräts",
+                            "entry_type": "Der Typ dieses Geräteeintrags",
+                            "connections": "Netzwerk- oder Protokollverbindungen als Liste von [Typ, Wert]-Paaren, z.B. [[\"mac\", \"aa:bb:cc:dd:ee:ff\"]]. Der Editor zeigt jedes Paar als zwei Bindestriche an (- - Typ / - Wert) — das ist normales YAML-Format für eine Liste von Listen.",
+                            "identifiers": "Integrationsspezifische Bezeichner als Liste von [Domain, ID]-Paaren, z.B. [[\"hue\", \"12345\"]]. Der Editor zeigt jedes Paar als zwei Bindestriche an (- - Domain / - ID) — das ist normales YAML-Format für eine Liste von Listen."
                         }
                     },
                     "entity_assignment": {
@@ -169,18 +179,28 @@
                         "data": {
                             "manufacturer": "Hersteller",
                             "model": "Modell",
+                            "model_id": "Modell-ID",
                             "sw_version": "Softwareversion",
                             "hw_version": "Hardwareversion",
                             "serial_number": "Seriennummer",
-                            "via_device_id": "Übergeordnetes Gerät"
+                            "via_device_id": "Übergeordnetes Gerät",
+                            "configuration_url": "Konfigurations-URL",
+                            "entry_type": "Eintragstyp",
+                            "connections": "Verbindungen",
+                            "identifiers": "Bezeichner"
                         },
                         "data_description": {
                             "manufacturer": "Der Hersteller des Geräts",
                             "model": "Das Modell des Geräts",
+                            "model_id": "Die maschinenlesbare Modell-ID des Geräts",
                             "sw_version": "Die Softwareversion des Geräts",
                             "hw_version": "Die Hardwareversion des Geräts",
                             "serial_number": "Die Seriennummer des Geräts",
-                            "via_device_id": "Das Gerät, über das dieses Gerät verbunden ist"
+                            "via_device_id": "Das Gerät, über das dieses Gerät verbunden ist",
+                            "configuration_url": "Eine URL zur Konfigurationsoberfläche des Geräts",
+                            "entry_type": "Der Typ dieses Geräteeintrags",
+                            "connections": "Netzwerk- oder Protokollverbindungen als Liste von [Typ, Wert]-Paaren, z.B. [[\"mac\", \"aa:bb:cc:dd:ee:ff\"]]. Der Editor zeigt jedes Paar als zwei Bindestriche an (- - Typ / - Wert) — das ist normales YAML-Format für eine Liste von Listen.",
+                            "identifiers": "Integrationsspezifische Bezeichner als Liste von [Domain, ID]-Paaren, z.B. [[\"hue\", \"12345\"]]. Der Editor zeigt jedes Paar als zwei Bindestriche an (- - Domain / - ID) — das ist normales YAML-Format für eine Liste von Listen."
                         }
                     },
                     "entity_assignment": {

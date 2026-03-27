@@ -90,8 +90,8 @@
                             "via_device_id": "The device this device is connected through",
                             "configuration_url": "A URL to the device's configuration interface",
                             "entry_type": "The type of this device entry",
-                            "connections": "Network or protocol connections as a list of [type, value] pairs, e.g. [[\"mac\", \"aa:bb:cc:dd:ee:ff\"]]",
-                            "identifiers": "Integration-specific identifiers as a list of [domain, id] pairs, e.g. [[\"hue\", \"12345\"]]"
+                            "connections": "Network or protocol connections as a list of [type, value] pairs, e.g. [[\"mac\", \"aa:bb:cc:dd:ee:ff\"]]. The editor shows each pair as two dashed lines (- - type / - value) — this is normal YAML formatting for a list of lists.",
+                            "identifiers": "Integration-specific identifiers as a list of [domain, id] pairs, e.g. [[\"hue\", \"12345\"]]. The editor shows each pair as two dashed lines (- - domain / - id) — this is normal YAML formatting for a list of lists."
                         }
                     },
                     "entity_assignment": {
@@ -205,8 +205,8 @@
                             "via_device_id": "The device this device is connected through",
                             "configuration_url": "A URL to the device's configuration interface",
                             "entry_type": "The type of this device entry",
-                            "connections": "Network or protocol connections as a list of [type, value] pairs, e.g. [[\"mac\", \"aa:bb:cc:dd:ee:ff\"]]",
-                            "identifiers": "Integration-specific identifiers as a list of [domain, id] pairs, e.g. [[\"hue\", \"12345\"]]"
+                            "connections": "Network or protocol connections as a list of [type, value] pairs, e.g. [[\"mac\", \"aa:bb:cc:dd:ee:ff\"]]. The editor shows each pair as two dashed lines (- - type / - value) — this is normal YAML formatting for a list of lists.",
+                            "identifiers": "Integration-specific identifiers as a list of [domain, id] pairs, e.g. [[\"hue\", \"12345\"]]. The editor shows each pair as two dashed lines (- - domain / - id) — this is normal YAML formatting for a list of lists."
                         }
                     },
                     "entity_assignment": {
