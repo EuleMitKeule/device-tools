@@ -114,10 +114,12 @@
                         "name": "Entity attributes",
                         "description": "Modify entity attributes",
                         "data": {
-                            "device_id": "Device"
+                            "device_id": "Device",
+                            "entity_category": "Entity category"
                         },
                         "data_description": {
-                            "device_id": "The device this entity belongs to"
+                            "device_id": "The device this entity belongs to",
+                            "entity_category": "The category of this entity"
                         }
                     }
                 }
@@ -130,6 +132,13 @@
                 "device": "Device",
                 "entity": "Entity",
                 "merge": "Merge"
+            }
+        },
+        "entity_category": {
+            "options": {
+                "default": "Default",
+                "config": "Config",
+                "diagnostic": "Diagnostic"
             }
         }
     },
@@ -184,10 +193,12 @@
                         "name": "Entity attributes",
                         "description": "Modify entity attributes",
                         "data": {
-                            "device_id": "Device"
+                            "device_id": "Device",
+                            "entity_category": "Entity category"
                         },
                         "data_description": {
-                            "device_id": "The device this entity belongs to"
+                            "device_id": "The device this entity belongs to",
+                            "entity_category": "The category of this entity"
                         }
                     },
                     "merge_options": {
