@@ -138,7 +138,7 @@ class EntityHandler(EntryHandler):
             if CONF_ENTITY_CATEGORY in update_kwargs:
                 raw = update_kwargs[CONF_ENTITY_CATEGORY]
                 update_kwargs[CONF_ENTITY_CATEGORY] = (
-                    EntityCategory(raw) if raw else None
+                    EntityCategory(raw) if raw and raw != "default" else None
                 )
             entity_registry.async_update_entity(entity.entity_id, **update_kwargs)
         finally:

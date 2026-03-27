@@ -136,7 +136,7 @@
         },
         "entity_category": {
             "options": {
-                "": "Default",
+                "default": "Default",
                 "config": "Config",
                 "diagnostic": "Diagnostic"
             }

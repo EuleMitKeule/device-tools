@@ -246,9 +246,12 @@ def _get_entity_options_schema(
     original_entity_category = modification_original_data.get(CONF_ENTITY_CATEGORY)
     if original_entity_category is not None:
         original_entity_category = original_entity_category.value
-    suggested_entity_category = modification_data.get(
-        CONF_ENTITY_CATEGORY,
-        original_entity_category,
+    suggested_entity_category = (
+        modification_data.get(
+            CONF_ENTITY_CATEGORY,
+            original_entity_category,
+        )
+        or "default"
     )
     return cast(
         vol.Schema,
