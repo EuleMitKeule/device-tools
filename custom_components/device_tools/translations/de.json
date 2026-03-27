@@ -7,7 +7,8 @@
         "error": {
             "cannot_merge_into_itself": "Ein Gerät kann nicht mit sich selbst zusammengeführt werden",
             "entity_in_merge": "Diese Entität ist bereits Teil einer Zusammenführungsmodifikation und kann nicht separat geändert werden",
-            "entity_has_modification": "Eines oder mehrere Geräte, die zusammengeführt werden sollen, haben Entitäten, die bereits Teil einer Entitätsmodifikation sind"
+            "entity_has_modification": "Eines oder mehrere Geräte, die zusammengeführt werden sollen, haben Entitäten, die bereits Teil einer Entitätsmodifikation sind",
+            "connections_collision": "Diese Verbindung ist bereits beim Gerät \"{device}\" registriert. Um Geräte zusammenzuführen, verwende bitte eine Zusammenführungs-Modifikation."
         },
         "step": {
             "user": {
@@ -143,6 +144,9 @@
         }
     },
     "options": {
+        "error": {
+            "connections_collision": "Diese Verbindung ist bereits beim Gerät \"{device}\" registriert. Um Geräte zusammenzuführen, verwende bitte eine Zusammenführungs-Modifikation."
+        },
         "step": {
             "init": {
                 "title": "Modifikation anpassen",

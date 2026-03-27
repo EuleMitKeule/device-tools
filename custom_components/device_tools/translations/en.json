@@ -7,7 +7,8 @@
         "error": {
             "cannot_merge_into_itself": "A device cannot be merged into itself",
             "entity_in_merge": "This entity is already part of a merge modification and cannot be changed separately",
-            "entity_has_modification": "One or more devices to be merged have entities that are already part of an entity modification"
+            "entity_has_modification": "One or more devices to be merged have entities that are already part of an entity modification",
+            "connections_collision": "This connection is already registered with device \"{device}\". To merge devices, please use a Merge modification instead."
         },
         "step": {
             "user": {
@@ -159,6 +160,9 @@
         }
     },
     "options": {
+        "error": {
+            "connections_collision": "This connection is already registered with device \"{device}\". To merge devices, please use a Merge modification instead."
+        },
         "step": {
             "init": {
                 "title": "Edit modification",

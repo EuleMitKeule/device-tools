@@ -57,6 +57,28 @@ from .utils import get_default_config_entry_title, name_for_device, name_for_ent
 _LOGGER = logging.getLogger(__name__)
 
 
+def _check_connections_collision(
+    connections: list[Any],
+    target_device_id: str | None,
+    device_registry: dr.DeviceRegistry,
+) -> dr.DeviceEntry | None:
+    """Return the first device that already owns one of the given connections.
+
+    Returns ``None`` when no collision is found or all connections are
+    claimed by ``target_device_id`` itself.
+    """
+    for connection in connections:
+        if not isinstance(connection, (list, tuple)) or len(connection) != 2:
+            continue
+        conn_type, conn_val = connection
+        existing = device_registry.async_get_device(
+            connections={(str(conn_type), str(conn_val))}
+        )
+        if existing is not None and existing.id != target_device_id:
+            return existing
+    return None
+
+
 def _normalize_device_value(key: str, value: Any) -> Any:
     """Convert a raw device-registry field value to a JSON-serializable form.
 
@@ -789,6 +811,28 @@ class DeviceToolsConfigFlow(ConfigFlow, domain=DOMAIN):
             user_input, self._modification_original_data, self._modification_type
         )
 
+        if CONF_CONNECTIONS in self._modification_data:
+            colliding = _check_connections_collision(
+                self._modification_data[CONF_CONNECTIONS],
+                self._modification_entry_id,
+                self._device_registry,
+            )
+            if colliding is not None:
+                return self.async_show_form(
+                    step_id="modify_device",
+                    data_schema=_get_options_schema(
+                        self._modification_type,
+                        self._modification_entry_id,
+                        self._modification_original_data,
+                        self._modification_data,
+                        self.hass,
+                    ),
+                    errors={"base": "connections_collision"},
+                    description_placeholders={
+                        "device": colliding.name or colliding.id
+                    },
+                )
+
         return await self.async_step_finish()
 
     async def async_step_modify_entity(
@@ -916,6 +960,31 @@ class OptionsFlowHandler(OptionsFlow):
             )
         elif modification_type == ModificationType.MERGE:
             modification_data = {}
+
+        if (
+            modification_type == ModificationType.DEVICE
+            and CONF_CONNECTIONS in modification_data
+        ):
+            colliding = _check_connections_collision(
+                modification_data[CONF_CONNECTIONS],
+                modification_entry_id,
+                self._device_registry,
+            )
+            if colliding is not None:
+                return self.async_show_form(
+                    step_id="init",
+                    data_schema=_get_options_schema(
+                        modification_type,
+                        modification_entry_id,
+                        modification_original_data,
+                        modification_data,
+                        self.hass,
+                    ),
+                    errors={"base": "connections_collision"},
+                    description_placeholders={
+                        "device": colliding.name or colliding.id
+                    },
+                )
 
         return self.async_create_entry(
             data={CONF_MODIFICATION_DATA: modification_data},
