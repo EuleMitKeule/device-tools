@@ -66,6 +66,7 @@ def _check_connections_collision(
 
     Returns ``None`` when no collision is found or all connections are
     claimed by ``target_device_id`` itself.
+    Only inspects well-formed [type, value] pairs; malformed entries are skipped.
     """
     for connection in connections:
         if not isinstance(connection, (list, tuple)) or len(connection) != 2:
@@ -79,6 +80,14 @@ def _check_connections_collision(
     return None
 
 
+def _connections_have_invalid_format(connections: list[Any]) -> bool:
+    """Return True if any entry in *connections* is not a 2-item list/tuple."""
+    return any(
+        not isinstance(item, (list, tuple)) or len(item) != 2
+        for item in connections
+    )
+
+
 def _normalize_device_value(key: str, value: Any) -> Any:
     """Convert a raw device-registry field value to a JSON-serializable form.
 
@@ -89,7 +98,11 @@ def _normalize_device_value(key: str, value: Any) -> Any:
     """
     if key in (CONF_CONNECTIONS, CONF_IDENTIFIERS):
         if isinstance(value, (set, frozenset)):
-            return [list(pair) for pair in value]
+            sorted_pairs = sorted(
+                (pair for pair in value if isinstance(pair, (list, tuple)) and len(pair) >= 2),
+                key=lambda pair: (str(pair[0]), str(pair[1])),
+            )
+            return [list(pair) for pair in sorted_pairs]
     if key == CONF_ENTRY_TYPE and isinstance(value, dr.DeviceEntryType):
         return value.value
     return value
@@ -812,6 +825,18 @@ class DeviceToolsConfigFlow(ConfigFlow, domain=DOMAIN):
         )
 
         if CONF_CONNECTIONS in self._modification_data:
+            if _connections_have_invalid_format(self._modification_data[CONF_CONNECTIONS]):
+                return self.async_show_form(
+                    step_id="modify_device",
+                    data_schema=_get_options_schema(
+                        self._modification_type,
+                        self._modification_entry_id,
+                        self._modification_original_data,
+                        self._modification_data,
+                        self.hass,
+                    ),
+                    errors={"base": "connections_invalid_format"},
+                )
             colliding = _check_connections_collision(
                 self._modification_data[CONF_CONNECTIONS],
                 self._modification_entry_id,
@@ -965,6 +990,18 @@ class OptionsFlowHandler(OptionsFlow):
             modification_type == ModificationType.DEVICE
             and CONF_CONNECTIONS in modification_data
         ):
+            if _connections_have_invalid_format(modification_data[CONF_CONNECTIONS]):
+                return self.async_show_form(
+                    step_id="init",
+                    data_schema=_get_options_schema(
+                        modification_type,
+                        modification_entry_id,
+                        modification_original_data,
+                        modification_data,
+                        self.hass,
+                    ),
+                    errors={"base": "connections_invalid_format"},
+                )
             colliding = _check_connections_collision(
                 modification_data[CONF_CONNECTIONS],
                 modification_entry_id,

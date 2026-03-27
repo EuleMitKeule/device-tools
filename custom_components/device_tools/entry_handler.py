@@ -244,13 +244,36 @@ class DeviceHandler(EntryHandler):
                     dr.DeviceEntryType(raw) if raw and raw != "none" else None
                 )
 
+        def _normalize_pair_set(
+            raw_value: Any, field_name: str
+        ) -> set[tuple[str, str]]:
+            """Normalize a raw iterable of pairs into a set of (str, str) tuples.
+
+            Invalid entries (non-iterables, wrong length) are ignored with a warning.
+            """
+            normalized: set[tuple[str, str]] = set()
+            if not raw_value:
+                return normalized
+            for index, item in enumerate(raw_value):
+                if not isinstance(item, (list, tuple)) or len(item) != 2:
+                    _LOGGER.warning(
+                        "Ignoring invalid %s entry at index %s: %r",
+                        field_name,
+                        index,
+                        item,
+                    )
+                    continue
+                first, second = item
+                normalized.add((str(first), str(second)))
+            return normalized
+
         if CONF_CONNECTIONS in result:
             raw = result.pop(CONF_CONNECTIONS)
-            result["new_connections"] = {tuple(c) for c in raw} if raw else set()
+            result["new_connections"] = _normalize_pair_set(raw, CONF_CONNECTIONS)
 
         if CONF_IDENTIFIERS in result:
             raw = result.pop(CONF_IDENTIFIERS)
-            result["new_identifiers"] = {tuple(i) for i in raw} if raw else set()
+            result["new_identifiers"] = _normalize_pair_set(raw, CONF_IDENTIFIERS)
 
         return result
 

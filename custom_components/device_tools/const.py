@@ -62,6 +62,11 @@ MODIFIABLE_ATTRIBUTES = {
         CONF_SERIAL_NUMBER,
         CONF_VIA_DEVICE_ID,
         CONF_CONFIGURATION_URL,
+        # NOTE: CONF_ENTRY_TYPE, CONF_CONNECTIONS, and CONF_IDENTIFIERS use
+        # non-JSON-serializable native HA types (DeviceEntryType, set/frozenset
+        # of tuples). They are normalized to JSON-safe forms by
+        # _normalize_device_value() in config_flow.py before being stored in
+        # config entry data.
         CONF_ENTRY_TYPE,
         CONF_CONNECTIONS,
         CONF_IDENTIFIERS,
