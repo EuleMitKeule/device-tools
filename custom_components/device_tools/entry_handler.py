@@ -14,8 +14,11 @@ from homeassistant.helpers.entity_registry import EntityCategory
 
 from .const import (
     CONF_ASSIGNED_ENTITIES,
+    CONF_CONNECTIONS,
     CONF_DEVICE_ID,
     CONF_ENTITY_CATEGORY,
+    CONF_ENTRY_TYPE,
+    CONF_IDENTIFIERS,
     CONF_MODIFICATION_DATA,
     CONF_MODIFICATION_ENTRY_ID,
     CONF_MODIFICATION_TYPE,
@@ -220,6 +223,35 @@ class DeviceHandler(EntryHandler):
             )
         return data
 
+    @staticmethod
+    def _prepare_device_kwargs(data: dict[str, Any]) -> dict[str, Any]:
+        """Convert modification data into kwargs suitable for async_update_device.
+
+        Handles:
+        - entry_type: "" or "service" string (from user input) or DeviceEntryType/None
+          (from original data) → DeviceEntryType enum or None
+        - connections/identifiers: stored as lists-of-lists or sets-of-tuples →
+          new_connections / new_identifiers as set[tuple[str, str]]
+        """
+        result = dict(data)
+
+        if CONF_ENTRY_TYPE in result:
+            raw = result.pop(CONF_ENTRY_TYPE)
+            if isinstance(raw, dr.DeviceEntryType):
+                result[CONF_ENTRY_TYPE] = raw
+            else:
+                result[CONF_ENTRY_TYPE] = dr.DeviceEntryType(raw) if raw else None
+
+        if CONF_CONNECTIONS in result:
+            raw = result.pop(CONF_CONNECTIONS)
+            result["new_connections"] = {tuple(c) for c in raw} if raw else set()
+
+        if CONF_IDENTIFIERS in result:
+            raw = result.pop(CONF_IDENTIFIERS)
+            result["new_identifiers"] = {tuple(i) for i in raw} if raw else set()
+
+        return result
+
     async def async_apply(self, config_entries: list[ConfigEntry[Any]]) -> None:
         """Apply all relevant config entries in priority order.
 
@@ -254,7 +286,9 @@ class DeviceHandler(EntryHandler):
                     self._entry_id,
                     merged,
                 )
-                device_registry.async_update_device(self._entry_id, **merged)
+                device_registry.async_update_device(
+                    self._entry_id, **self._prepare_device_kwargs(merged)
+                )
         finally:
             await self.async_start_listening()
 
@@ -280,7 +314,9 @@ class DeviceHandler(EntryHandler):
                     self._entry_id,
                     revert_kwargs,
                 )
-                device_registry.async_update_device(self._entry_id, **revert_kwargs)
+                device_registry.async_update_device(
+                    self._entry_id, **self._prepare_device_kwargs(revert_kwargs)
+                )
 
             # Remove each DT config entry from the device.
             # Guard against removing the last config entry — that would delete the device.

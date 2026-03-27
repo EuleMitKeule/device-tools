@@ -20,18 +20,23 @@ from homeassistant.helpers import device_registry as dr, entity_registry as er, 
 
 from .const import (
     CONF_ASSIGNED_ENTITIES,
+    CONF_CONFIGURATION_URL,
+    CONF_CONNECTIONS,
     CONF_DEVICE_ATTRIBUTES,
     CONF_DEVICE_ID,
     CONF_ENTITIES,
+    CONF_ENTRY_TYPE,
     CONF_ENTITY_ASSIGNMENT,
     CONF_ENTITY_ATTRIBUTES,
     CONF_ENTITY_CATEGORY,
     CONF_HW_VERSION,
+    CONF_IDENTIFIERS,
     CONF_INFORMATION,
     CONF_MANUFACTURER,
     CONF_MERGE_DEVICE_IDS,
     CONF_MERGE_OPTIONS,
     CONF_MODEL,
+    CONF_MODEL_ID,
     CONF_MODIFICATION_DATA,
     CONF_MODIFICATION_ENTRY,
     CONF_MODIFICATION_ENTRY_ID,
@@ -207,6 +212,59 @@ def _get_device_options_schema(
                                     multiple=False,
                                 )
                             ),
+                            vol.Optional(
+                                CONF_CONFIGURATION_URL,
+                                description={
+                                    "suggested_value": modification_data.get(
+                                        CONF_CONFIGURATION_URL,
+                                        modification_original_data.get(
+                                            CONF_CONFIGURATION_URL
+                                        ),
+                                    )
+                                },
+                            ): str,
+                            vol.Optional(
+                                CONF_MODEL_ID,
+                                description={
+                                    "suggested_value": modification_data.get(
+                                        CONF_MODEL_ID,
+                                        modification_original_data.get(CONF_MODEL_ID),
+                                    )
+                                },
+                            ): str,
+                            vol.Optional(
+                                CONF_ENTRY_TYPE,
+                                description={
+                                    "suggested_value": modification_data.get(
+                                        CONF_ENTRY_TYPE,
+                                        modification_original_data.get(CONF_ENTRY_TYPE),
+                                    )
+                                },
+                            ): selector.SelectSelector(
+                                selector.SelectSelectorConfig(
+                                    options=["", "service"],
+                                    mode=selector.SelectSelectorMode.DROPDOWN,
+                                    translation_key=CONF_ENTRY_TYPE,
+                                )
+                            ),
+                            vol.Optional(
+                                CONF_CONNECTIONS,
+                                description={
+                                    "suggested_value": modification_data.get(
+                                        CONF_CONNECTIONS,
+                                        modification_original_data.get(CONF_CONNECTIONS),
+                                    )
+                                },
+                            ): selector.ObjectSelector(),
+                            vol.Optional(
+                                CONF_IDENTIFIERS,
+                                description={
+                                    "suggested_value": modification_data.get(
+                                        CONF_IDENTIFIERS,
+                                        modification_original_data.get(CONF_IDENTIFIERS),
+                                    )
+                                },
+                            ): selector.ObjectSelector(),
                         },
                     )
                 ),
