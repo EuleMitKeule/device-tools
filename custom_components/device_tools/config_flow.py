@@ -20,18 +20,23 @@ from homeassistant.helpers import device_registry as dr, entity_registry as er, 
 
 from .const import (
     CONF_ASSIGNED_ENTITIES,
+    CONF_CONFIGURATION_URL,
+    CONF_CONNECTIONS,
     CONF_DEVICE_ATTRIBUTES,
     CONF_DEVICE_ID,
     CONF_ENTITIES,
+    CONF_ENTRY_TYPE,
     CONF_ENTITY_ASSIGNMENT,
     CONF_ENTITY_ATTRIBUTES,
     CONF_ENTITY_CATEGORY,
     CONF_HW_VERSION,
+    CONF_IDENTIFIERS,
     CONF_INFORMATION,
     CONF_MANUFACTURER,
     CONF_MERGE_DEVICE_IDS,
     CONF_MERGE_OPTIONS,
     CONF_MODEL,
+    CONF_MODEL_ID,
     CONF_MODIFICATION_DATA,
     CONF_MODIFICATION_ENTRY,
     CONF_MODIFICATION_ENTRY_ID,
@@ -50,6 +55,57 @@ from .const import (
 from .utils import get_default_config_entry_title, name_for_device, name_for_entity
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _check_connections_collision(
+    connections: list[Any],
+    target_device_id: str | None,
+    device_registry: dr.DeviceRegistry,
+) -> dr.DeviceEntry | None:
+    """Return the first device that already owns one of the given connections.
+
+    Returns ``None`` when no collision is found or all connections are
+    claimed by ``target_device_id`` itself.
+    Only inspects well-formed [type, value] pairs; malformed entries are skipped.
+    """
+    for connection in connections:
+        if not isinstance(connection, (list, tuple)) or len(connection) != 2:
+            continue
+        conn_type, conn_val = connection
+        existing = device_registry.async_get_device(
+            connections={(str(conn_type), str(conn_val))}
+        )
+        if existing is not None and existing.id != target_device_id:
+            return existing
+    return None
+
+
+def _connections_have_invalid_format(connections: list[Any]) -> bool:
+    """Return True if any entry in *connections* is not a 2-item list/tuple."""
+    return any(
+        not isinstance(item, (list, tuple)) or len(item) != 2
+        for item in connections
+    )
+
+
+def _normalize_device_value(key: str, value: Any) -> Any:
+    """Convert a raw device-registry field value to a JSON-serializable form.
+
+    ``device.dict_repr`` returns:
+    - ``connections`` / ``identifiers`` as ``frozenset[tuple[str, str]]``
+    - ``entry_type`` as ``DeviceEntryType | None``
+    These cannot be stored in config-entry data (JSON) as-is.
+    """
+    if key in (CONF_CONNECTIONS, CONF_IDENTIFIERS):
+        if isinstance(value, (set, frozenset)):
+            sorted_pairs = sorted(
+                (pair for pair in value if isinstance(pair, (list, tuple)) and len(pair) >= 2),
+                key=lambda pair: (str(pair[0]), str(pair[1])),
+            )
+            return [list(pair) for pair in sorted_pairs]
+    if key == CONF_ENTRY_TYPE and isinstance(value, dr.DeviceEntryType):
+        return value.value
+    return value
 
 
 def _get_base_options_schema(
@@ -132,6 +188,37 @@ def _get_device_options_schema(
             )
             if entity.entity_id not in already_assigned_by_us
         ]
+
+    # entry_type is stored as a DeviceEntryType enum (or None) in original data;
+    # convert to string for the selector default value.
+    original_entry_type = modification_original_data.get(CONF_ENTRY_TYPE)
+    if isinstance(original_entry_type, dr.DeviceEntryType):
+        original_entry_type = original_entry_type.value
+    suggested_entry_type = (
+        modification_data.get(CONF_ENTRY_TYPE, original_entry_type) or "none"
+    )
+
+    # connections/identifiers are frozenset[tuple[str, str]] in device.dict_repr;
+    # convert to list-of-lists so the ObjectSelector can serialize them to JSON.
+    def _set_to_list(value: Any) -> list[list[str]] | None:
+        if value is None:
+            return None
+        if isinstance(value, (set, frozenset)):
+            return [list(pair) for pair in value]
+        return list(value)  # already list-of-lists from a previous form submission
+
+    suggested_connections = _set_to_list(
+        modification_data.get(
+            CONF_CONNECTIONS,
+            modification_original_data.get(CONF_CONNECTIONS),
+        )
+    )
+    suggested_identifiers = _set_to_list(
+        modification_data.get(
+            CONF_IDENTIFIERS,
+            modification_original_data.get(CONF_IDENTIFIERS),
+        )
+    )
     return cast(
         vol.Schema,
         _get_base_options_schema(
@@ -207,6 +294,50 @@ def _get_device_options_schema(
                                     multiple=False,
                                 )
                             ),
+                            vol.Optional(
+                                CONF_CONFIGURATION_URL,
+                                description={
+                                    "suggested_value": modification_data.get(
+                                        CONF_CONFIGURATION_URL,
+                                        modification_original_data.get(
+                                            CONF_CONFIGURATION_URL
+                                        ),
+                                    )
+                                },
+                            ): str,
+                            vol.Optional(
+                                CONF_MODEL_ID,
+                                description={
+                                    "suggested_value": modification_data.get(
+                                        CONF_MODEL_ID,
+                                        modification_original_data.get(CONF_MODEL_ID),
+                                    )
+                                },
+                            ): str,
+                            vol.Optional(
+                                CONF_ENTRY_TYPE,
+                                description={
+                                    "suggested_value": suggested_entry_type,
+                                },
+                            ): selector.SelectSelector(
+                                selector.SelectSelectorConfig(
+                                    options=["none", "service"],
+                                    mode=selector.SelectSelectorMode.DROPDOWN,
+                                    translation_key=CONF_ENTRY_TYPE,
+                                )
+                            ),
+                            vol.Optional(
+                                CONF_CONNECTIONS,
+                                description={
+                                    "suggested_value": suggested_connections,
+                                },
+                            ): selector.ObjectSelector(),
+                            vol.Optional(
+                                CONF_IDENTIFIERS,
+                                description={
+                                    "suggested_value": suggested_identifiers,
+                                },
+                            ): selector.ObjectSelector(),
                         },
                     )
                 ),
@@ -672,7 +803,7 @@ class DeviceToolsConfigFlow(ConfigFlow, domain=DOMAIN):
                 modification_original_data = {}
 
         self._modification_original_data = {
-            k: v
+            k: _normalize_device_value(k, v)
             for k, v in modification_original_data.items()
             if k in MODIFIABLE_ATTRIBUTES[self._modification_type]
         }
@@ -692,6 +823,40 @@ class DeviceToolsConfigFlow(ConfigFlow, domain=DOMAIN):
         self._modification_data = _user_input_to_modification_data(
             user_input, self._modification_original_data, self._modification_type
         )
+
+        if CONF_CONNECTIONS in self._modification_data:
+            if _connections_have_invalid_format(self._modification_data[CONF_CONNECTIONS]):
+                return self.async_show_form(
+                    step_id="modify_device",
+                    data_schema=_get_options_schema(
+                        self._modification_type,
+                        self._modification_entry_id,
+                        self._modification_original_data,
+                        self._modification_data,
+                        self.hass,
+                    ),
+                    errors={"base": "connections_invalid_format"},
+                )
+            colliding = _check_connections_collision(
+                self._modification_data[CONF_CONNECTIONS],
+                self._modification_entry_id,
+                self._device_registry,
+            )
+            if colliding is not None:
+                return self.async_show_form(
+                    step_id="modify_device",
+                    data_schema=_get_options_schema(
+                        self._modification_type,
+                        self._modification_entry_id,
+                        self._modification_original_data,
+                        self._modification_data,
+                        self.hass,
+                    ),
+                    errors={"base": "connections_collision"},
+                    description_placeholders={
+                        "device": colliding.name or colliding.id
+                    },
+                )
 
         return await self.async_step_finish()
 
@@ -820,6 +985,43 @@ class OptionsFlowHandler(OptionsFlow):
             )
         elif modification_type == ModificationType.MERGE:
             modification_data = {}
+
+        if (
+            modification_type == ModificationType.DEVICE
+            and CONF_CONNECTIONS in modification_data
+        ):
+            if _connections_have_invalid_format(modification_data[CONF_CONNECTIONS]):
+                return self.async_show_form(
+                    step_id="init",
+                    data_schema=_get_options_schema(
+                        modification_type,
+                        modification_entry_id,
+                        modification_original_data,
+                        modification_data,
+                        self.hass,
+                    ),
+                    errors={"base": "connections_invalid_format"},
+                )
+            colliding = _check_connections_collision(
+                modification_data[CONF_CONNECTIONS],
+                modification_entry_id,
+                self._device_registry,
+            )
+            if colliding is not None:
+                return self.async_show_form(
+                    step_id="init",
+                    data_schema=_get_options_schema(
+                        modification_type,
+                        modification_entry_id,
+                        modification_original_data,
+                        modification_data,
+                        self.hass,
+                    ),
+                    errors={"base": "connections_collision"},
+                    description_placeholders={
+                        "device": colliding.name or colliding.id
+                    },
+                )
 
         return self.async_create_entry(
             data={CONF_MODIFICATION_DATA: modification_data},

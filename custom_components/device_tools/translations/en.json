@@ -7,7 +7,9 @@
         "error": {
             "cannot_merge_into_itself": "A device cannot be merged into itself",
             "entity_in_merge": "This entity is already part of a merge modification and cannot be changed separately",
-            "entity_has_modification": "One or more devices to be merged have entities that are already part of an entity modification"
+            "entity_has_modification": "One or more devices to be merged have entities that are already part of an entity modification",
+            "connections_collision": "This connection is already registered with device \"{device}\". To merge devices, please use a Merge modification instead.",
+            "connections_invalid_format": "Connections must be a list of [type, value] pairs, e.g. [[\"mac\", \"aa:bb:cc:dd:ee:ff\"]]."
         },
         "step": {
             "user": {
@@ -69,18 +71,28 @@
                         "data": {
                             "manufacturer": "Manufacturer",
                             "model": "Model",
+                            "model_id": "Model ID",
                             "sw_version": "Software version",
                             "hw_version": "Hardware version",
                             "serial_number": "Serial number",
-                            "via_device_id": "Via device"
+                            "via_device_id": "Via device",
+                            "configuration_url": "Configuration URL",
+                            "entry_type": "Entry type",
+                            "connections": "Connections",
+                            "identifiers": "Identifiers"
                         },
                         "data_description": {
                             "manufacturer": "The manufacturer of the device",
                             "model": "The model of the device",
+                            "model_id": "The machine-readable model ID of the device",
                             "sw_version": "The software version of the device",
                             "hw_version": "The hardware version of the device",
                             "serial_number": "The serial number of the device",
-                            "via_device_id": "The device this device is connected through"
+                            "via_device_id": "The device this device is connected through",
+                            "configuration_url": "A URL to the device's configuration interface",
+                            "entry_type": "The type of this device entry",
+                            "connections": "Network or protocol connections as a list of [type, value] pairs, e.g. [[\"mac\", \"aa:bb:cc:dd:ee:ff\"]]. The editor shows each pair as two dashed lines (- - type / - value) — this is normal YAML formatting for a list of lists.",
+                            "identifiers": "Integration-specific identifiers as a list of [domain, id] pairs, e.g. [[\"hue\", \"12345\"]]. The editor shows each pair as two dashed lines (- - domain / - id) — this is normal YAML formatting for a list of lists."
                         }
                     },
                     "entity_assignment": {
@@ -140,9 +152,19 @@
                 "config": "Config",
                 "diagnostic": "Diagnostic"
             }
+        },
+        "entry_type": {
+            "options": {
+                "none": "Default",
+                "service": "Service"
+            }
         }
     },
     "options": {
+        "error": {
+            "connections_collision": "This connection is already registered with device \"{device}\". To merge devices, please use a Merge modification instead.",
+            "connections_invalid_format": "Connections must be a list of [type, value] pairs, e.g. [[\"mac\", \"aa:bb:cc:dd:ee:ff\"]]."
+        },
         "step": {
             "init": {
                 "title": "Edit modification",
@@ -165,18 +187,28 @@
                         "data": {
                             "manufacturer": "Manufacturer",
                             "model": "Model",
+                            "model_id": "Model ID",
                             "sw_version": "Software version",
                             "hw_version": "Hardware version",
                             "serial_number": "Serial number",
-                            "via_device_id": "Via device"
+                            "via_device_id": "Via device",
+                            "configuration_url": "Configuration URL",
+                            "entry_type": "Entry type",
+                            "connections": "Connections",
+                            "identifiers": "Identifiers"
                         },
                         "data_description": {
                             "manufacturer": "The manufacturer of the device",
                             "model": "The model of the device",
+                            "model_id": "The machine-readable model ID of the device",
                             "sw_version": "The software version of the device",
                             "hw_version": "The hardware version of the device",
                             "serial_number": "The serial number of the device",
-                            "via_device_id": "The device this device is connected through"
+                            "via_device_id": "The device this device is connected through",
+                            "configuration_url": "A URL to the device's configuration interface",
+                            "entry_type": "The type of this device entry",
+                            "connections": "Network or protocol connections as a list of [type, value] pairs, e.g. [[\"mac\", \"aa:bb:cc:dd:ee:ff\"]]. The editor shows each pair as two dashed lines (- - type / - value) — this is normal YAML formatting for a list of lists.",
+                            "identifiers": "Integration-specific identifiers as a list of [domain, id] pairs, e.g. [[\"hue\", \"12345\"]]. The editor shows each pair as two dashed lines (- - domain / - id) — this is normal YAML formatting for a list of lists."
                         }
                     },
                     "entity_assignment": {
