@@ -57,6 +57,22 @@ from .utils import get_default_config_entry_title, name_for_device, name_for_ent
 _LOGGER = logging.getLogger(__name__)
 
 
+def _normalize_device_value(key: str, value: Any) -> Any:
+    """Convert a raw device-registry field value to a JSON-serializable form.
+
+    ``device.dict_repr`` returns:
+    - ``connections`` / ``identifiers`` as ``frozenset[tuple[str, str]]``
+    - ``entry_type`` as ``DeviceEntryType | None``
+    These cannot be stored in config-entry data (JSON) as-is.
+    """
+    if key in (CONF_CONNECTIONS, CONF_IDENTIFIERS):
+        if isinstance(value, (set, frozenset)):
+            return [list(pair) for pair in value]
+    if key == CONF_ENTRY_TYPE and isinstance(value, dr.DeviceEntryType):
+        return value.value
+    return value
+
+
 def _get_base_options_schema(
     modification_type: ModificationType,
     modification_entry_id: str | None,
@@ -145,6 +161,28 @@ def _get_device_options_schema(
         original_entry_type = original_entry_type.value
     suggested_entry_type = (
         modification_data.get(CONF_ENTRY_TYPE, original_entry_type) or "none"
+    )
+
+    # connections/identifiers are frozenset[tuple[str, str]] in device.dict_repr;
+    # convert to list-of-lists so the ObjectSelector can serialize them to JSON.
+    def _set_to_list(value: Any) -> list[list[str]] | None:
+        if value is None:
+            return None
+        if isinstance(value, (set, frozenset)):
+            return [list(pair) for pair in value]
+        return value  # already list-of-lists from a previous form submission
+
+    suggested_connections = _set_to_list(
+        modification_data.get(
+            CONF_CONNECTIONS,
+            modification_original_data.get(CONF_CONNECTIONS),
+        )
+    )
+    suggested_identifiers = _set_to_list(
+        modification_data.get(
+            CONF_IDENTIFIERS,
+            modification_original_data.get(CONF_IDENTIFIERS),
+        )
     )
     return cast(
         vol.Schema,
@@ -256,19 +294,13 @@ def _get_device_options_schema(
                             vol.Optional(
                                 CONF_CONNECTIONS,
                                 description={
-                                    "suggested_value": modification_data.get(
-                                        CONF_CONNECTIONS,
-                                        modification_original_data.get(CONF_CONNECTIONS),
-                                    )
+                                    "suggested_value": suggested_connections,
                                 },
                             ): selector.ObjectSelector(),
                             vol.Optional(
                                 CONF_IDENTIFIERS,
                                 description={
-                                    "suggested_value": modification_data.get(
-                                        CONF_IDENTIFIERS,
-                                        modification_original_data.get(CONF_IDENTIFIERS),
-                                    )
+                                    "suggested_value": suggested_identifiers,
                                 },
                             ): selector.ObjectSelector(),
                         },
@@ -736,7 +768,7 @@ class DeviceToolsConfigFlow(ConfigFlow, domain=DOMAIN):
                 modification_original_data = {}
 
         self._modification_original_data = {
-            k: v
+            k: _normalize_device_value(k, v)
             for k, v in modification_original_data.items()
             if k in MODIFIABLE_ATTRIBUTES[self._modification_type]
         }
