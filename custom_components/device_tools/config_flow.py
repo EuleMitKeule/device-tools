@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from typing import TYPE_CHECKING, Any, cast
+import urllib.parse
 import uuid
 
 import voluptuous as vol
@@ -86,6 +87,15 @@ def _connections_have_invalid_format(connections: list[Any]) -> bool:
         not isinstance(item, (list, tuple)) or len(item) != 2
         for item in connections
     )
+
+
+def _is_valid_url(value: str) -> bool:
+    """Return True if *value* is a valid absolute URL with a scheme and host."""
+    try:
+        parsed = urllib.parse.urlparse(value)
+        return bool(parsed.scheme and parsed.netloc)
+    except ValueError:
+        return False
 
 
 def _normalize_device_value(key: str, value: Any) -> Any:
@@ -457,7 +467,6 @@ def _get_merge_options_schema(
                             ): selector.DeviceSelector(
                                 selector.DeviceSelectorConfig(
                                     multiple=True,
-                                    read_only=True,
                                 )
                             ),
                         }
@@ -858,6 +867,20 @@ class DeviceToolsConfigFlow(ConfigFlow, domain=DOMAIN):
                     },
                 )
 
+        configuration_url = self._modification_data.get(CONF_CONFIGURATION_URL)
+        if configuration_url and not _is_valid_url(configuration_url):
+            return self.async_show_form(
+                step_id="modify_device",
+                data_schema=_get_options_schema(
+                    self._modification_type,
+                    self._modification_entry_id,
+                    self._modification_original_data,
+                    self._modification_data,
+                    self.hass,
+                ),
+                errors={"base": "invalid_configuration_url"},
+            )
+
         return await self.async_step_finish()
 
     async def async_step_modify_entity(
@@ -984,6 +1007,47 @@ class OptionsFlowHandler(OptionsFlow):
                 modification_type,
             )
         elif modification_type == ModificationType.MERGE:
+            merge_options = user_input.get(CONF_MERGE_OPTIONS, {})
+            new_merge_device_ids: list[str] = merge_options.get(CONF_MERGE_DEVICE_IDS, [])
+
+            # Exclude the target device itself
+            if modification_entry_id:
+                new_merge_device_ids = [
+                    mid for mid in new_merge_device_ids if mid != modification_entry_id
+                ]
+
+            # Recompute CONF_MODIFICATION_ORIGINAL_DATA:
+            # keep existing data for devices still in the list, add new ones
+            entity_registry = self._entity_registry
+            new_original_data: dict[str, Any] = {}
+            for merge_device_id in new_merge_device_ids:
+                if merge_device_id in modification_original_data:
+                    new_original_data[merge_device_id] = modification_original_data[
+                        merge_device_id
+                    ]
+                else:
+                    new_original_data[merge_device_id] = {
+                        CONF_ENTITIES: {
+                            entity.entity_id: {
+                                k: v
+                                for k, v in entity.extended_dict.items()
+                                if k in MODIFIABLE_ATTRIBUTES[ModificationType.ENTITY]
+                            }
+                            for entity in er.async_entries_for_device(
+                                entity_registry,
+                                merge_device_id,
+                                include_disabled_entities=True,
+                            )
+                        }
+                    }
+
+            self.hass.config_entries.async_update_entry(
+                self.config_entry,
+                data={
+                    **self.config_entry.data,
+                    CONF_MODIFICATION_ORIGINAL_DATA: new_original_data,
+                },
+            )
             modification_data = {}
 
         if (
@@ -1021,6 +1085,21 @@ class OptionsFlowHandler(OptionsFlow):
                     description_placeholders={
                         "device": colliding.name or colliding.id
                     },
+                )
+
+        if modification_type == ModificationType.DEVICE:
+            configuration_url = modification_data.get(CONF_CONFIGURATION_URL)
+            if configuration_url and not _is_valid_url(configuration_url):
+                return self.async_show_form(
+                    step_id="init",
+                    data_schema=_get_options_schema(
+                        modification_type,
+                        modification_entry_id,
+                        modification_original_data,
+                        modification_data,
+                        self.hass,
+                    ),
+                    errors={"base": "invalid_configuration_url"},
                 )
 
         return self.async_create_entry(

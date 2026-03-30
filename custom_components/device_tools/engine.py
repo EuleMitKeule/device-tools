@@ -6,7 +6,7 @@ import functools
 import logging
 from typing import Any
 
-from homeassistant.config_entries import ConfigEntry
+from homeassistant.config_entries import ConfigEntry, ConfigEntryDisabler
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr, entity_registry as er
 
@@ -55,6 +55,9 @@ class ModificationEngine:
         self._entity_handlers: dict[str, EntityHandler] = {}
         self._device_handlers: dict[str, DeviceHandler] = {}
 
+        # Track already-warned (entry_id + "_" + missing_id) to log only once
+        self._warned_missing: set[str] = set()
+
     async def async_start(self) -> None:
         """Load store. For each existing config entry: call async_on_entry_loaded."""
         await self._store.async_load()
@@ -92,6 +95,129 @@ class ModificationEngine:
         """
         self._tracked_entries[config_entry.entry_id] = config_entry
 
+        mod_type = ModificationType(config_entry.data[CONF_MODIFICATION_TYPE])
+        modification_entry_id: str | None = config_entry.data.get(CONF_MODIFICATION_ENTRY_ID)
+        modification_is_custom_entry: bool = config_entry.data.get(
+            CONF_MODIFICATION_IS_CUSTOM_ENTRY, False
+        )
+        title: str = config_entry.title
+
+        entity_registry = er.async_get(self._hass)
+        device_registry = dr.async_get(self._hass)
+
+        # --- Graceful handling of deleted targets / sources ---
+
+        # ENTITY modification: check that the referenced entity still exists
+        if mod_type == ModificationType.ENTITY and modification_entry_id:
+            if entity_registry.async_get(modification_entry_id) is None:
+                warn_key = f"{config_entry.entry_id}_{modification_entry_id}"
+                if warn_key not in self._warned_missing:
+                    self._warned_missing.add(warn_key)
+                    _LOGGER.warning(
+                        "Entity %s referenced by modification '%s' no longer exists. "
+                        "Disabling modification.",
+                        modification_entry_id,
+                        title,
+                    )
+                await self._hass.config_entries.async_set_disabled_by(
+                    config_entry.entry_id,
+                    ConfigEntryDisabler.USER,
+                )
+                return
+
+        # DEVICE modification (non-creation): check that the referenced device still exists
+        if (
+            mod_type == ModificationType.DEVICE
+            and not modification_is_custom_entry
+            and modification_entry_id
+        ):
+            if device_registry.async_get(modification_entry_id) is None:
+                warn_key = f"{config_entry.entry_id}_{modification_entry_id}"
+                if warn_key not in self._warned_missing:
+                    self._warned_missing.add(warn_key)
+                    _LOGGER.warning(
+                        "Device %s referenced by modification '%s' no longer exists. "
+                        "Disabling modification.",
+                        modification_entry_id,
+                        title,
+                    )
+                await self._hass.config_entries.async_set_disabled_by(
+                    config_entry.entry_id,
+                    ConfigEntryDisabler.USER,
+                )
+                return
+
+        # MERGE modification: remove any source devices that no longer exist
+        if mod_type == ModificationType.MERGE:
+            original_data: dict[str, Any] = config_entry.data.get(
+                CONF_MODIFICATION_ORIGINAL_DATA, {}
+            )
+            missing_sources = [
+                device_id
+                for device_id in original_data
+                if device_registry.async_get(device_id) is None
+            ]
+            if missing_sources:
+                new_original_data = {
+                    k: v for k, v in original_data.items() if k not in missing_sources
+                }
+                for missing_id in missing_sources:
+                    warn_key = f"{config_entry.entry_id}_{missing_id}"
+                    if warn_key not in self._warned_missing:
+                        self._warned_missing.add(warn_key)
+                        _LOGGER.warning(
+                            "Device %s referenced by merge modification '%s' no longer "
+                            "exists. Removing from merge sources.",
+                            missing_id,
+                            title,
+                        )
+                self._hass.config_entries.async_update_entry(
+                    config_entry,
+                    data={
+                        **config_entry.data,
+                        CONF_MODIFICATION_ORIGINAL_DATA: new_original_data,
+                    },
+                )
+                # config_entry is mutated in-place by HA; re-read data from it
+                config_entry = self._hass.config_entries.async_get_entry(
+                    config_entry.entry_id
+                ) or config_entry
+
+        # DEVICE modification: remove assigned entities that no longer exist
+        if mod_type == ModificationType.DEVICE:
+            mod_data: dict[str, Any] = config_entry.options.get(CONF_MODIFICATION_DATA, {})
+            assigned: list[str] = mod_data.get(CONF_ASSIGNED_ENTITIES, [])
+            missing_entities = [
+                eid for eid in assigned if entity_registry.async_get(eid) is None
+            ]
+            if missing_entities:
+                new_assigned = [eid for eid in assigned if eid not in missing_entities]
+                for missing_id in missing_entities:
+                    warn_key = f"{config_entry.entry_id}_{missing_id}"
+                    if warn_key not in self._warned_missing:
+                        self._warned_missing.add(warn_key)
+                        _LOGGER.warning(
+                            "Entity %s assigned to device modification '%s' no longer "
+                            "exists. Removing from assigned entities.",
+                            missing_id,
+                            title,
+                        )
+                new_mod_data = {**mod_data, CONF_ASSIGNED_ENTITIES: new_assigned}
+                new_options = {
+                    **config_entry.options,
+                    CONF_MODIFICATION_DATA: new_mod_data,
+                }
+                self._hass.config_entries.async_update_entry(
+                    config_entry,
+                    options=new_options,
+                )
+                config_entry = self._hass.config_entries.async_get_entry(
+                    config_entry.entry_id
+                ) or config_entry
+
+        # Update the tracked entry reference after potential mutations
+        self._tracked_entries[config_entry.entry_id] = config_entry
+
         affected_entity_ids = self._get_affected_entity_ids(config_entry)
         affected_device_ids = self._get_affected_device_ids(config_entry)
 
@@ -99,9 +225,6 @@ class ModificationEngine:
         # removals even when HA mutates ConfigEntry objects in-place.
         self._tracked_entity_ids[config_entry.entry_id] = set(affected_entity_ids)
         self._tracked_device_ids[config_entry.entry_id] = set(affected_device_ids)
-
-        entity_registry = er.async_get(self._hass)
-        device_registry = dr.async_get(self._hass)
 
         # Ensure entity handlers and original data
         for entity_id in affected_entity_ids:
