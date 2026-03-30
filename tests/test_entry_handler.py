@@ -514,3 +514,41 @@ class TestEntityHandlerRevertDeviceGuard:
             call_kwargs = mock_entity_registry.async_update_entity.call_args
             assert call_kwargs is not None
             assert call_kwargs.kwargs.get(CONF_DEVICE_ID) == "original_device_id"
+
+
+# ---------------------------------------------------------------------------
+# DeviceHandler.async_revert — missing original data guard
+# ---------------------------------------------------------------------------
+
+
+class TestDeviceHandlerRevertMissingData:
+    """Tests for DeviceHandler.async_revert with missing original data."""
+
+    @pytest.fixture
+    def device_handler(self, mock_hass, mock_get_active_entries):
+        store = MagicMock(spec=OriginalDataStore)
+        store.get_device = MagicMock(return_value=None)  # No original data
+        return DeviceHandler(
+            mock_hass,
+            "device_id_1",
+            store,
+            get_active_entries=mock_get_active_entries,
+        )
+
+    async def test_revert_handles_missing_original_data(
+        self, device_handler, mock_hass
+    ):
+        """async_revert should not raise when original data is missing from store."""
+        mock_device = MagicMock()
+        mock_device.config_entries = {"config_entry_1"}
+        mock_device_registry = MagicMock()
+        mock_device_registry.async_get.return_value = mock_device
+
+        with patch(
+            "custom_components.device_tools.entry_handler.dr.async_get",
+            return_value=mock_device_registry,
+        ):
+            # Should NOT raise ValueError
+            await device_handler.async_revert()
+            # Should not attempt to update device attributes
+            mock_device_registry.async_update_device.assert_not_called()

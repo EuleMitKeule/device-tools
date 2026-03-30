@@ -1,4 +1,4 @@
-"""Tests for ModificationEngine._find_dependent_entry_ids."""
+"""Tests for ModificationEngine."""
 
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
@@ -10,9 +10,11 @@ from homeassistant.core import HomeAssistant
 from custom_components.device_tools.const import (
     CONF_ASSIGNED_ENTITIES,
     CONF_DEVICE_ID,
+    CONF_ENTITIES,
     CONF_MODIFICATION_DATA,
     CONF_MODIFICATION_ENTRY_ID,
     CONF_MODIFICATION_IS_CUSTOM_ENTRY,
+    CONF_MODIFICATION_ORIGINAL_DATA,
     CONF_MODIFICATION_TYPE,
     ModificationType,
 )
@@ -60,6 +62,25 @@ def _make_device_entry(
         CONF_MODIFICATION_IS_CUSTOM_ENTRY: is_custom,
     }
     entry.options = {CONF_MODIFICATION_DATA: mod_data}
+    return entry
+
+
+def _make_merge_entry(
+    entry_id: str,
+    target_device_id: str,
+    original_data: dict[str, Any] | None = None,
+) -> MagicMock:
+    """Create a mock MERGE config entry."""
+    entry = MagicMock(spec=ConfigEntry)
+    entry.entry_id = entry_id
+    entry.title = f"Merge mod {entry_id}"
+    entry.data = {
+        CONF_MODIFICATION_TYPE: ModificationType.MERGE.value,
+        CONF_MODIFICATION_ENTRY_ID: target_device_id,
+        CONF_MODIFICATION_IS_CUSTOM_ENTRY: False,
+        CONF_MODIFICATION_ORIGINAL_DATA: original_data or {},
+    }
+    entry.options = {CONF_MODIFICATION_DATA: {}}
     return entry
 
 
@@ -218,4 +239,203 @@ class TestAsyncOnEntryUnloadedStripsStalDeviceId:
 
         await engine.async_on_entry_unloaded(creation_entry)
 
+        mock_hass.config_entries.async_update_entry.assert_not_called()
+
+
+class TestAsyncOnEntryUnloadedMergeCascade:
+    """Tests that unloading a creation-mod removes deleted device from MERGE entries."""
+
+    @pytest.fixture
+    def engine(self, mock_hass, mock_store):
+        """Create a ModificationEngine instance."""
+        return ModificationEngine(mock_hass, mock_store)
+
+    @pytest.mark.asyncio
+    async def test_removes_device_from_merge_original_data(self, engine, mock_hass):
+        """Deleting a creation-mod should strip the device from MERGE original_data."""
+        creation_device_id = "virtual_device_1"
+        merge_target_id = "real_device_1"
+
+        creation_entry = _make_device_entry(
+            "creation_entry_1", creation_device_id, is_custom=True
+        )
+        merge_entry = _make_merge_entry(
+            "merge_entry_1",
+            merge_target_id,
+            original_data={
+                creation_device_id: {
+                    CONF_ENTITIES: {
+                        "sensor.test": {CONF_DEVICE_ID: creation_device_id},
+                    }
+                }
+            },
+        )
+
+        engine._tracked_entries["creation_entry_1"] = creation_entry
+        engine._tracked_entries["merge_entry_1"] = merge_entry
+        engine._tracked_entity_ids["creation_entry_1"] = set()
+        engine._tracked_device_ids["creation_entry_1"] = {creation_device_id}
+        engine._tracked_entity_ids["merge_entry_1"] = {"sensor.test"}
+        engine._tracked_device_ids["merge_entry_1"] = {
+            merge_target_id,
+            creation_device_id,
+        }
+
+        mock_hass.config_entries = MagicMock()
+
+        await engine.async_on_entry_unloaded(creation_entry)
+
+        # async_update_entry should have been called to update the merge entry's data
+        mock_hass.config_entries.async_update_entry.assert_called_once()
+        call_args = mock_hass.config_entries.async_update_entry.call_args
+        updated_entry = call_args[0][0]
+        new_data = call_args[1]["data"]
+        assert updated_entry is merge_entry
+        assert creation_device_id not in new_data[CONF_MODIFICATION_ORIGINAL_DATA]
+
+    @pytest.mark.asyncio
+    async def test_updates_merge_tracked_ids_after_cascade(self, engine, mock_hass):
+        """After removing a device from merge, tracked IDs should be updated."""
+        creation_device_id = "virtual_device_1"
+        merge_target_id = "real_device_1"
+
+        creation_entry = _make_device_entry(
+            "creation_entry_1", creation_device_id, is_custom=True
+        )
+        merge_entry = _make_merge_entry(
+            "merge_entry_1",
+            merge_target_id,
+            original_data={
+                creation_device_id: {
+                    CONF_ENTITIES: {
+                        "sensor.test": {CONF_DEVICE_ID: creation_device_id},
+                    }
+                }
+            },
+        )
+
+        engine._tracked_entries["creation_entry_1"] = creation_entry
+        engine._tracked_entries["merge_entry_1"] = merge_entry
+        engine._tracked_entity_ids["creation_entry_1"] = set()
+        engine._tracked_device_ids["creation_entry_1"] = {creation_device_id}
+        engine._tracked_entity_ids["merge_entry_1"] = {"sensor.test"}
+        engine._tracked_device_ids["merge_entry_1"] = {
+            merge_target_id,
+            creation_device_id,
+        }
+
+        mock_hass.config_entries = MagicMock()
+
+        def _fake_update_entry(entry, **kwargs):
+            if "data" in kwargs:
+                entry.data = kwargs["data"]
+            if "options" in kwargs:
+                entry.options = kwargs["options"]
+
+        mock_hass.config_entries.async_update_entry.side_effect = _fake_update_entry
+
+        await engine.async_on_entry_unloaded(creation_entry)
+
+        # After cascade, the merge entry's tracked entity IDs should not include
+        # entities from the deleted device.
+        assert "sensor.test" not in engine._tracked_entity_ids.get(
+            "merge_entry_1", set()
+        )
+        # The merge entry's tracked device IDs should not include the deleted device.
+        assert creation_device_id not in engine._tracked_device_ids.get(
+            "merge_entry_1", set()
+        )
+
+    @pytest.mark.asyncio
+    async def test_entity_handler_cleaned_up_when_no_remaining(
+        self, engine, mock_hass, mock_store
+    ):
+        """Entity handler should be removed if no entries reference it after cascade."""
+        creation_device_id = "virtual_device_1"
+        merge_target_id = "real_device_1"
+
+        creation_entry = _make_device_entry(
+            "creation_entry_1",
+            creation_device_id,
+            assigned_entities=["sensor.test"],
+            is_custom=True,
+        )
+        merge_entry = _make_merge_entry(
+            "merge_entry_1",
+            merge_target_id,
+            original_data={
+                creation_device_id: {
+                    CONF_ENTITIES: {
+                        "sensor.test": {CONF_DEVICE_ID: creation_device_id},
+                    }
+                }
+            },
+        )
+
+        engine._tracked_entries["creation_entry_1"] = creation_entry
+        engine._tracked_entries["merge_entry_1"] = merge_entry
+        engine._tracked_entity_ids["creation_entry_1"] = {"sensor.test"}
+        engine._tracked_device_ids["creation_entry_1"] = {creation_device_id}
+        engine._tracked_entity_ids["merge_entry_1"] = {"sensor.test"}
+        engine._tracked_device_ids["merge_entry_1"] = {
+            merge_target_id,
+            creation_device_id,
+        }
+
+        mock_hass.config_entries = MagicMock()
+
+        def _fake_update_entry(entry, **kwargs):
+            if "data" in kwargs:
+                entry.data = kwargs["data"]
+            if "options" in kwargs:
+                entry.options = kwargs["options"]
+
+        mock_hass.config_entries.async_update_entry.side_effect = _fake_update_entry
+
+        await engine.async_on_entry_unloaded(creation_entry)
+
+        # sensor.test should have been removed from entity handlers
+        assert "sensor.test" not in engine._entity_handlers
+        # And from the store
+        mock_store.async_remove_entity.assert_any_call("sensor.test")
+
+    @pytest.mark.asyncio
+    async def test_does_not_touch_merge_without_deleted_device(
+        self, engine, mock_hass
+    ):
+        """MERGE entries not referencing the deleted device should be untouched."""
+        creation_device_id = "virtual_device_1"
+        merge_target_id = "real_device_1"
+        other_device_id = "other_device"
+
+        creation_entry = _make_device_entry(
+            "creation_entry_1", creation_device_id, is_custom=True
+        )
+        merge_entry = _make_merge_entry(
+            "merge_entry_1",
+            merge_target_id,
+            original_data={
+                other_device_id: {
+                    CONF_ENTITIES: {
+                        "sensor.other": {CONF_DEVICE_ID: other_device_id},
+                    }
+                }
+            },
+        )
+
+        engine._tracked_entries["creation_entry_1"] = creation_entry
+        engine._tracked_entries["merge_entry_1"] = merge_entry
+        engine._tracked_entity_ids["creation_entry_1"] = set()
+        engine._tracked_device_ids["creation_entry_1"] = {creation_device_id}
+        engine._tracked_entity_ids["merge_entry_1"] = {"sensor.other"}
+        engine._tracked_device_ids["merge_entry_1"] = {
+            merge_target_id,
+            other_device_id,
+        }
+
+        mock_hass.config_entries = MagicMock()
+
+        await engine.async_on_entry_unloaded(creation_entry)
+
+        # The merge entry should not have been updated
         mock_hass.config_entries.async_update_entry.assert_not_called()

@@ -127,6 +127,13 @@ class ModificationEngine:
 
         # Ensure device handlers and original data
         for device_id in affected_device_ids:
+            if device_registry.async_get(device_id) is None:
+                _LOGGER.debug(
+                    "Device %s not found in registry, skipping handler creation",
+                    device_id,
+                )
+                continue
+
             if device_id not in self._device_handlers:
                 self._device_handlers[device_id] = DeviceHandler(
                     self._hass,
@@ -148,7 +155,7 @@ class ModificationEngine:
                     await self._store.async_set_device(device_id, original)
 
         entity_handler: EntityHandler
-        device_handler: DeviceHandler
+        device_handler: DeviceHandler | None
         # Apply all relevant entries and start listening
         for entity_id in affected_entity_ids:
             entity_handler = self._entity_handlers[entity_id]
@@ -157,7 +164,9 @@ class ModificationEngine:
             await entity_handler.async_start_listening()
 
         for device_id in affected_device_ids:
-            device_handler = self._device_handlers[device_id]
+            device_handler = self._device_handlers.get(device_id)
+            if device_handler is None:
+                continue
             entries = self.get_entries_for_device(device_id)
             await device_handler.async_apply(entries)
             await device_handler.async_start_listening()
@@ -166,7 +175,8 @@ class ModificationEngine:
         """Handle config entry unload.
 
         1. If this is a creation-modification (modification_is_custom_entry=True),
-           detect and warn about dependent entries before removing the device.
+           cascade-update dependent entries (strip stale device_id, remove device
+           from MERGE original_data) BEFORE reverting handlers.
         2. For affected handlers: revert and stop listening
         3. Remove config entry from engine's tracking
         4. For each affected entity/device: if no more config entries reference it,
@@ -177,11 +187,17 @@ class ModificationEngine:
         )
         mod_type = ModificationType(config_entry.data[CONF_MODIFICATION_TYPE])
 
+        # Collect additional entity IDs affected by cascade when a
+        # creation-modification device is deleted.
+        cascade_entity_ids: set[str] = set()
+
         if (
             modification_is_custom_entry
             and mod_type == ModificationType.DEVICE
         ):
             creation_device_id: str = config_entry.data[CONF_MODIFICATION_ENTRY_ID]
+
+            # --- Cascade: dependent ENTITY / DEVICE mods ---
             dependent_ids = self._find_dependent_entry_ids(
                 creation_device_id, exclude_entry_id=config_entry.entry_id
             )
@@ -200,8 +216,90 @@ class ModificationEngine:
                     dependent_titles,
                 )
 
-        affected_entity_ids = self._get_affected_entity_ids(config_entry)
-        affected_device_ids = self._get_affected_device_ids(config_entry)
+            for dep_entry_id in dependent_ids:
+                dep_entry = self._tracked_entries.get(dep_entry_id)
+                if dep_entry is None:
+                    continue
+
+                mod_data = dict(
+                    dep_entry.options.get(CONF_MODIFICATION_DATA, {})
+                )
+                if mod_data.get(CONF_DEVICE_ID) == creation_device_id:
+                    mod_data.pop(CONF_DEVICE_ID)
+                    new_options = {
+                        **dep_entry.options,
+                        CONF_MODIFICATION_DATA: mod_data,
+                    }
+                    self._hass.config_entries.async_update_entry(
+                        dep_entry, options=new_options
+                    )
+                    _LOGGER.info(
+                        "Removed stale device_id %s from dependent modification %s",
+                        creation_device_id,
+                        dep_entry.title,
+                    )
+
+                cascade_entity_ids.update(
+                    self._get_affected_entity_ids(dep_entry)
+                )
+
+            # --- Cascade: MERGE mods referencing the deleted device as source ---
+            for entry_id, entry in list(self._tracked_entries.items()):
+                if entry_id == config_entry.entry_id:
+                    continue
+                entry_mod_type = ModificationType(
+                    entry.data[CONF_MODIFICATION_TYPE]
+                )
+                if entry_mod_type != ModificationType.MERGE:
+                    continue
+
+                orig_data = entry.data.get(
+                    CONF_MODIFICATION_ORIGINAL_DATA, {}
+                )
+                if creation_device_id not in orig_data:
+                    continue
+
+                # Collect entity IDs from the deleted device's portion
+                removed_data = orig_data.get(creation_device_id, {})
+                cascade_entity_ids.update(
+                    removed_data.get(CONF_ENTITIES, {}).keys()
+                )
+
+                # Strip the deleted device from the merge's persisted data
+                new_orig_data = {
+                    k: v
+                    for k, v in orig_data.items()
+                    if k != creation_device_id
+                }
+                self._hass.config_entries.async_update_entry(
+                    entry,
+                    data={
+                        **entry.data,
+                        CONF_MODIFICATION_ORIGINAL_DATA: new_orig_data,
+                    },
+                )
+
+                # Update tracked IDs synchronously so any async listener
+                # that fires later sees consistent state.
+                self._tracked_entity_ids[entry_id] = set(
+                    self._get_affected_entity_ids(entry)
+                )
+                self._tracked_device_ids[entry_id] = set(
+                    self._get_affected_device_ids(entry)
+                )
+
+                _LOGGER.info(
+                    "Removed deleted device %s from merge modification %s",
+                    creation_device_id,
+                    entry.title,
+                )
+
+        # Combine directly-affected IDs with cascade-affected IDs
+        affected_entity_ids = (
+            set(self._get_affected_entity_ids(config_entry))
+            | cascade_entity_ids
+        )
+        affected_device_ids = set(self._get_affected_device_ids(config_entry))
 
         entity_handler: EntityHandler | None
         device_handler: DeviceHandler | None
@@ -247,51 +345,6 @@ class ModificationEngine:
                 if device_handler:
                     await device_handler.async_apply(remaining)
                     await device_handler.async_start_listening()
-
-        # If this was a creation-modification, strip the now-invalid device_id from
-        # dependent config entries' persisted options, then re-apply so handlers
-        # pick up the cleaned data.
-        if modification_is_custom_entry and mod_type == ModificationType.DEVICE:
-            creation_device_id = config_entry.data[CONF_MODIFICATION_ENTRY_ID]
-            dependent_ids = self._find_dependent_entry_ids(
-                creation_device_id,
-                exclude_entry_id=config_entry.entry_id,
-            )
-            for dep_entry_id in dependent_ids:
-                dep_entry = self._tracked_entries.get(dep_entry_id)
-                if dep_entry is None:
-                    continue
-
-                # Remove stale device_id from the dependent entry's persisted options
-                mod_data = dict(
-                    dep_entry.options.get(CONF_MODIFICATION_DATA, {})
-                )
-                if mod_data.get(CONF_DEVICE_ID) == creation_device_id:
-                    mod_data.pop(CONF_DEVICE_ID)
-                    new_options = {
-                        **dep_entry.options,
-                        CONF_MODIFICATION_DATA: mod_data,
-                    }
-                    self._hass.config_entries.async_update_entry(
-                        dep_entry, options=new_options
-                    )
-                    _LOGGER.info(
-                        "Removed stale device_id %s from dependent modification %s",
-                        creation_device_id,
-                        dep_entry.title,
-                    )
-
-                # Re-apply the dependent entry's entity handlers
-                dep_entity_ids = self._get_affected_entity_ids(dep_entry)
-                for entity_id in dep_entity_ids:
-                    entity_handler = self._entity_handlers.get(entity_id)
-                    if entity_handler:
-                        await entity_handler.async_revert()
-                        await entity_handler.async_stop_listening()
-                        remaining = self.get_entries_for_entity(entity_id)
-                        if remaining:
-                            await entity_handler.async_apply(remaining)
-                            await entity_handler.async_start_listening()
 
     async def async_on_entry_updated(self, config_entry: ConfigEntry[Any]) -> None:
         """Handle options/data change for a config entry.

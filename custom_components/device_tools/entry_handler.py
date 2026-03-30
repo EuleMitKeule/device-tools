@@ -352,12 +352,20 @@ class DeviceHandler(EntryHandler):
         """Revert to original_data."""
         await self.async_stop_listening()
         try:
-            original = self._get_original_data()
             device_registry = dr.async_get(self._hass)
             device = device_registry.async_get(self._entry_id)
             if device is None:
                 _LOGGER.warning("Device %s not found, cannot revert", self._entry_id)
                 return
+
+            try:
+                original = self._get_original_data()
+            except ValueError:
+                _LOGGER.warning(
+                    "No original data for device %s, skipping attribute revert",
+                    self._entry_id,
+                )
+                original = {}
 
             revert_kwargs: dict[str, Any] = {
                 k: v
