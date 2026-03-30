@@ -389,6 +389,53 @@ class TestEntityHandlerApplyDeviceGuard:
             await entity_handler.async_apply([entry])
             mock_entity_registry.async_update_entity.assert_not_called()
 
+    async def test_merge_takes_precedence_over_device_mod(
+        self, entity_handler, mock_hass
+    ):
+        """MERGE should take precedence over DEVICE mod for device_id assignment."""
+        merge_entry = MagicMock(spec=ConfigEntry)
+        merge_entry.data = {
+            CONF_MODIFICATION_TYPE: ModificationType.MERGE.value,
+            CONF_MODIFICATION_ENTRY_ID: "merge_target_device",
+        }
+        merge_entry.options = {CONF_MODIFICATION_DATA: {}}
+
+        device_entry = MagicMock(spec=ConfigEntry)
+        device_entry.data = {
+            CONF_MODIFICATION_TYPE: ModificationType.DEVICE.value,
+            CONF_MODIFICATION_ENTRY_ID: "virtual_device",
+        }
+        device_entry.options = {
+            CONF_MODIFICATION_DATA: {
+                CONF_ASSIGNED_ENTITIES: ["sensor.test"],
+            }
+        }
+
+        mock_entity = MagicMock()
+        mock_entity.entity_id = "sensor.test"
+        mock_entity_registry = MagicMock()
+        mock_entity_registry.async_get.return_value = mock_entity
+
+        mock_device = MagicMock()
+        mock_device_registry = MagicMock()
+        mock_device_registry.async_get.return_value = mock_device
+
+        # Entries are sorted by priority: MERGE first, DEVICE second
+        with (
+            patch(
+                "custom_components.device_tools.entry_handler.er.async_get",
+                return_value=mock_entity_registry,
+            ),
+            patch(
+                "custom_components.device_tools.entry_handler.dr.async_get",
+                return_value=mock_device_registry,
+            ),
+        ):
+            await entity_handler.async_apply([merge_entry, device_entry])
+            mock_entity_registry.async_update_entity.assert_called_once_with(
+                "sensor.test", device_id="merge_target_device"
+            )
+
 
 # ---------------------------------------------------------------------------
 # EntityHandler.async_revert — device-existence guard (Bug 3)

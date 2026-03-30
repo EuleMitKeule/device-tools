@@ -107,6 +107,7 @@ class EntityHandler(EntryHandler):
                     if (
                         CONF_ASSIGNED_ENTITIES in mod_data
                         and self._entry_id in mod_data.get(CONF_ASSIGNED_ENTITIES, [])
+                        and CONF_DEVICE_ID not in merged
                     ):
                         merged[CONF_DEVICE_ID] = mod_entry_id
                 elif mod_type == ModificationType.ENTITY:
