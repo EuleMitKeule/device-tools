@@ -107,6 +107,7 @@ class EntityHandler(EntryHandler):
                     if (
                         CONF_ASSIGNED_ENTITIES in mod_data
                         and self._entry_id in mod_data.get(CONF_ASSIGNED_ENTITIES, [])
+                        and CONF_DEVICE_ID not in merged
                     ):
                         merged[CONF_DEVICE_ID] = mod_entry_id
                 elif mod_type == ModificationType.ENTITY:
@@ -123,6 +124,22 @@ class EntityHandler(EntryHandler):
                     or key == CONF_DEVICE_ID
                 )
             }
+
+            if not update_kwargs:
+                return
+
+            if CONF_DEVICE_ID in update_kwargs:
+                target_device_id: str | None = update_kwargs[CONF_DEVICE_ID]
+                if target_device_id is not None:
+                    device_registry = dr.async_get(self._hass)
+                    if device_registry.async_get(target_device_id) is None:
+                        _LOGGER.warning(
+                            "Device %s referenced by entity %s no longer exists, "
+                            "skipping device_id assignment",
+                            target_device_id,
+                            self._entry_id,
+                        )
+                        update_kwargs.pop(CONF_DEVICE_ID, None)
 
             if not update_kwargs:
                 return
@@ -164,6 +181,20 @@ class EntityHandler(EntryHandler):
                 if k in MODIFIABLE_ATTRIBUTES[ModificationType.ENTITY]
                 or k == CONF_DEVICE_ID
             }
+
+            if CONF_DEVICE_ID in revert_kwargs:
+                original_device_id: str | None = revert_kwargs[CONF_DEVICE_ID]
+                if original_device_id is not None:
+                    device_registry = dr.async_get(self._hass)
+                    if device_registry.async_get(original_device_id) is None:
+                        _LOGGER.warning(
+                            "Original device %s for entity %s no longer exists, "
+                            "skipping device_id restore",
+                            original_device_id,
+                            self._entry_id,
+                        )
+                        revert_kwargs.pop(CONF_DEVICE_ID, None)
+
             if revert_kwargs:
                 _LOGGER.debug(
                     "Reverting entity %s to original data: %s",
@@ -321,12 +352,20 @@ class DeviceHandler(EntryHandler):
         """Revert to original_data."""
         await self.async_stop_listening()
         try:
-            original = self._get_original_data()
             device_registry = dr.async_get(self._hass)
             device = device_registry.async_get(self._entry_id)
             if device is None:
                 _LOGGER.warning("Device %s not found, cannot revert", self._entry_id)
                 return
+
+            try:
+                original = self._get_original_data()
+            except ValueError:
+                _LOGGER.warning(
+                    "No original data for device %s, skipping attribute revert",
+                    self._entry_id,
+                )
+                original = {}
 
             revert_kwargs: dict[str, Any] = {
                 k: v
