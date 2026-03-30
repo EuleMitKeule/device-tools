@@ -157,3 +157,65 @@ class TestFindDependentEntryIds:
 
         result = engine._find_dependent_entry_ids("custom_device_123")
         assert result == []
+
+
+class TestAsyncOnEntryUnloadedStripsStalDeviceId:
+    """Tests that async_on_entry_unloaded strips stale device_id from dependent entries."""
+
+    @pytest.fixture
+    def engine(self, mock_hass, mock_store):
+        """Create a ModificationEngine instance."""
+        return ModificationEngine(mock_hass, mock_store)
+
+    @pytest.mark.asyncio
+    async def test_strips_stale_device_id_from_dependent_options(
+        self, engine, mock_hass
+    ):
+        """Deleting a creation-mod should remove device_id from dependent entry options."""
+        creation_device_id = "custom_device_123"
+
+        creation_entry = _make_device_entry(
+            "creation_entry_1", creation_device_id, is_custom=True
+        )
+        entity_entry = _make_entity_entry(
+            "entity_entry_1", "sensor.test", device_id=creation_device_id
+        )
+
+        engine._tracked_entries["creation_entry_1"] = creation_entry
+        engine._tracked_entries["entity_entry_1"] = entity_entry
+        engine._tracked_entity_ids["creation_entry_1"] = set()
+        engine._tracked_device_ids["creation_entry_1"] = {creation_device_id}
+
+        mock_hass.config_entries = MagicMock()
+
+        await engine.async_on_entry_unloaded(creation_entry)
+
+        mock_hass.config_entries.async_update_entry.assert_called_once()
+        call_args = mock_hass.config_entries.async_update_entry.call_args
+        updated_entry = call_args[0][0]
+        new_options = call_args[1]["options"]
+        assert updated_entry is entity_entry
+        assert CONF_DEVICE_ID not in new_options[CONF_MODIFICATION_DATA]
+
+    @pytest.mark.asyncio
+    async def test_does_not_strip_when_device_id_differs(self, engine, mock_hass):
+        """Should not update options if the dependent's device_id is not the deleted one."""
+        creation_device_id = "custom_device_123"
+
+        creation_entry = _make_device_entry(
+            "creation_entry_1", creation_device_id, is_custom=True
+        )
+        entity_entry = _make_entity_entry(
+            "entity_entry_1", "sensor.test", device_id="other_device"
+        )
+
+        engine._tracked_entries["creation_entry_1"] = creation_entry
+        engine._tracked_entries["entity_entry_1"] = entity_entry
+        engine._tracked_entity_ids["creation_entry_1"] = set()
+        engine._tracked_device_ids["creation_entry_1"] = {creation_device_id}
+
+        mock_hass.config_entries = MagicMock()
+
+        await engine.async_on_entry_unloaded(creation_entry)
+
+        mock_hass.config_entries.async_update_entry.assert_not_called()

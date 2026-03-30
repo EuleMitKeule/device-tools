@@ -248,18 +248,40 @@ class ModificationEngine:
                     await device_handler.async_apply(remaining)
                     await device_handler.async_start_listening()
 
-        # If this was a creation-modification, re-apply all dependent entries so they
-        # are in a clean state (device-existence guards in EntityHandler will handle
-        # skipping the now-invalid device_id assignment).
+        # If this was a creation-modification, strip the now-invalid device_id from
+        # dependent config entries' persisted options, then re-apply so handlers
+        # pick up the cleaned data.
         if modification_is_custom_entry and mod_type == ModificationType.DEVICE:
+            creation_device_id = config_entry.data[CONF_MODIFICATION_ENTRY_ID]
             dependent_ids = self._find_dependent_entry_ids(
-                config_entry.data[CONF_MODIFICATION_ENTRY_ID],
+                creation_device_id,
                 exclude_entry_id=config_entry.entry_id,
             )
             for dep_entry_id in dependent_ids:
                 dep_entry = self._tracked_entries.get(dep_entry_id)
                 if dep_entry is None:
                     continue
+
+                # Remove stale device_id from the dependent entry's persisted options
+                mod_data = dict(
+                    dep_entry.options.get(CONF_MODIFICATION_DATA, {})
+                )
+                if mod_data.get(CONF_DEVICE_ID) == creation_device_id:
+                    mod_data.pop(CONF_DEVICE_ID)
+                    new_options = {
+                        **dep_entry.options,
+                        CONF_MODIFICATION_DATA: mod_data,
+                    }
+                    self._hass.config_entries.async_update_entry(
+                        dep_entry, options=new_options
+                    )
+                    _LOGGER.info(
+                        "Removed stale device_id %s from dependent modification %s",
+                        creation_device_id,
+                        dep_entry.title,
+                    )
+
+                # Re-apply the dependent entry's entity handlers
                 dep_entity_ids = self._get_affected_entity_ids(dep_entry)
                 for entity_id in dep_entity_ids:
                     entity_handler = self._entity_handlers.get(entity_id)
