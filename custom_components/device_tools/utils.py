@@ -1,16 +1,8 @@
 """Utility functions for Device Tools."""
 
-from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr, entity_registry as er
 
-from .const import (
-    CONF_DEVICE_ID,
-    CONF_ENTITIES,
-    CONF_MODIFICATION_ORIGINAL_DATA,
-    CONF_MODIFICATION_TYPE,
-    DOMAIN,
-    ModificationType,
-)
+from .const import ModificationType
 
 
 def string_to_registry_entry_disabler(value: str) -> er.RegistryEntryDisabler | None:
@@ -27,36 +19,6 @@ def string_to_device_entry_disabler(value: str) -> dr.DeviceEntryDisabler | None
         return dr.DeviceEntryDisabler(value)
     except ValueError:
         return None
-
-
-def is_entity_in_merge_modification(
-    hass: HomeAssistant,
-    entity_id: str,
-) -> bool:
-    """Check if an entity is already part of a merge modification."""
-    for entry in hass.config_entries.async_entries(DOMAIN):
-        if entry.data.get(CONF_MODIFICATION_TYPE) == ModificationType.MERGE:
-            original_data = entry.data.get(CONF_MODIFICATION_ORIGINAL_DATA, {})
-            for device_data in original_data.values():
-                entities = device_data.get(CONF_ENTITIES, {})
-                if entity_id in entities:
-                    return True
-    return False
-
-
-def check_merge_conflicts(
-    hass: HomeAssistant,
-    merge_device_ids: list[str],
-) -> bool:
-    """Check if any entities on devices being merged have entity modifications."""
-    for entry in hass.config_entries.async_entries(DOMAIN):
-        if entry.data.get(CONF_MODIFICATION_TYPE) == ModificationType.ENTITY:
-            original_data = entry.data.get(CONF_MODIFICATION_ORIGINAL_DATA, {})
-            original_device_id = original_data.get(CONF_DEVICE_ID)
-
-            if original_device_id in merge_device_ids:
-                return True
-    return False
 
 
 def get_default_config_entry_title(
