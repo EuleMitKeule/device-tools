@@ -180,7 +180,7 @@ class TestFindDependentEntryIds:
         assert result == []
 
 
-class TestAsyncOnEntryUnloadedStripsStalDeviceId:
+class TestAsyncOnEntryUnloadedStripsStaleDeviceId:
     """Tests that async_on_entry_unloaded strips stale device_id from dependent entries."""
 
     @pytest.fixture

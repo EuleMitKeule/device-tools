@@ -14,6 +14,7 @@ from .const import (
     CONF_ASSIGNED_ENTITIES,
     CONF_DEVICE_ID,
     CONF_ENTITIES,
+    CONF_MERGE_DEVICE_IDS,
     CONF_MODIFICATION_DATA,
     CONF_MODIFICATION_ENTRY_ID,
     CONF_MODIFICATION_IS_CUSTOM_ENTRY,
@@ -197,6 +198,25 @@ class ModificationEngine:
                         CONF_MODIFICATION_ORIGINAL_DATA: new_original_data,
                     },
                 )
+                # Also remove any stale CONF_MERGE_DEVICE_IDS from options left over
+                # from migration (the options flow does not write this key, so removing
+                # it here keeps data consistent with new entries that never had it).
+                mod_options: dict[str, Any] = config_entry.options.get(
+                    CONF_MODIFICATION_DATA, {}
+                )
+                if CONF_MERGE_DEVICE_IDS in mod_options:
+                    new_mod_options = {
+                        k: v
+                        for k, v in mod_options.items()
+                        if k != CONF_MERGE_DEVICE_IDS
+                    }
+                    self._hass.config_entries.async_update_entry(
+                        config_entry,
+                        options={
+                            **config_entry.options,
+                            CONF_MODIFICATION_DATA: new_mod_options,
+                        },
+                    )
                 # config_entry is mutated in-place by HA; re-read data from it
                 config_entry = self._hass.config_entries.async_get_entry(
                     config_entry.entry_id

@@ -859,7 +859,7 @@ class TestMigrateAttributeAndEntity:
 
     @pytest.mark.asyncio
     async def test_creates_merge_entry_with_device_ids(self, mock_hass):
-        """A single MERGE entry is created with CONF_MERGE_DEVICE_IDS in modification_data."""
+        """A single MERGE entry is created without CONF_MERGE_DEVICE_IDS in modification_data."""
         entry = _make_v1_config_entry(V1_MERGE_ONLY)
         device = _make_device(
             "device_1",
@@ -903,10 +903,10 @@ class TestMigrateAttributeAndEntity:
         assert new.data[CONF_MODIFICATION_TYPE] == ModificationType.MERGE
         assert new.data[CONF_MODIFICATION_IS_CUSTOM_ENTRY] is False
         assert new.data[CONF_MODIFICATION_ENTRY_ID] == "device_1"
-        # CONF_MERGE_DEVICE_IDS must be present in modification_data
+        # CONF_MERGE_DEVICE_IDS must NOT be written to modification_data after migration;
+        # the UI falls back to modification_original_data.keys() instead.
         mod_data = new.options[CONF_MODIFICATION_DATA]
-        assert CONF_MERGE_DEVICE_IDS in mod_data
-        assert set(mod_data[CONF_MERGE_DEVICE_IDS]) == {"merge_dev_1", "merge_dev_2"}
+        assert CONF_MERGE_DEVICE_IDS not in mod_data
         # original_data should contain per-device entity data
         orig = new.data[CONF_MODIFICATION_ORIGINAL_DATA]
         assert "merge_dev_1" in orig
@@ -949,12 +949,13 @@ class TestMigrateAttributeAndEntity:
         assert result is True
         new = collector.entries[0]
         mod_data = new.options[CONF_MODIFICATION_DATA]
-        assert mod_data[CONF_MERGE_DEVICE_IDS] == ["merge_dev_1"]
+        assert CONF_MERGE_DEVICE_IDS not in mod_data
+        assert "merge_dev_1" in new.data[CONF_MODIFICATION_ORIGINAL_DATA]
         assert "merge_dev_2" not in new.data[CONF_MODIFICATION_ORIGINAL_DATA]
 
     @pytest.mark.asyncio
     async def test_all_merge_devices_missing(self, mock_hass):
-        """All merge devices gone → entry is still created with empty lists."""
+        """All merge devices gone → entry is still created with empty original data."""
         entry = _make_v1_config_entry(V1_MERGE_ONLY)
         device = _make_device(
             "device_1",
@@ -980,7 +981,9 @@ class TestMigrateAttributeAndEntity:
 
         assert result is True
         new = collector.entries[0]
-        assert new.options[CONF_MODIFICATION_DATA][CONF_MERGE_DEVICE_IDS] == []
+        mod_data = new.options[CONF_MODIFICATION_DATA]
+        assert CONF_MERGE_DEVICE_IDS not in mod_data
+        assert new.data[CONF_MODIFICATION_ORIGINAL_DATA] == {}
 
 
 class TestMigrateFullEntry:
