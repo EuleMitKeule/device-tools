@@ -1,811 +1,747 @@
-"""ModificationEngine — single orchestrator for all Device Tools modifications."""
+"""Modification engine orchestrating all Device Tools modifications."""
 
 from __future__ import annotations
 
-import functools
+from collections.abc import Iterable
 import logging
 from typing import Any
 
-from homeassistant.config_entries import ConfigEntry, ConfigEntryDisabler
-from homeassistant.core import CALLBACK_TYPE, Event, HomeAssistant
-from homeassistant.helpers import device_registry as dr, entity_registry as er
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
+from homeassistant.core import CALLBACK_TYPE, CoreState, Event, HomeAssistant, callback
+from homeassistant.helpers import (
+    device_registry as dr,
+    entity_registry as er,
+    issue_registry as ir,
+)
 
 from .const import (
     CONF_ASSIGNED_ENTITIES,
     CONF_DEVICE_ID,
     CONF_ENTITIES,
-    CONF_MERGE_DEVICE_IDS,
+    CONF_ENTITY_CATEGORY,
+    CONF_ENTRY_TYPE,
     CONF_MODIFICATION_DATA,
     CONF_MODIFICATION_ENTRY_ID,
-    CONF_MODIFICATION_IS_CUSTOM_ENTRY,
     CONF_MODIFICATION_ORIGINAL_DATA,
-    CONF_MODIFICATION_TYPE,
+    CONF_VIA_DEVICE_ID,
+    DOMAIN,
+    ENTITY_CATEGORY_DEFAULT,
+    ENTRY_TYPE_NONE,
     MODIFIABLE_ATTRIBUTES,
+    MODIFICATION_PRECEDENCE,
     ModificationType,
 )
-from .entry_handler import DeviceHandler, EntityHandler
-from .original_data_store import OriginalDataStore
+from .entry_handler import DeviceHandler, EntityHandler, EntryHandler
+from .original_data_store import KIND_DEVICES, KIND_ENTITIES, OriginalDataStore
+from .utils import (
+    assigned_entities,
+    async_get_device,
+    async_resolve_device_id,
+    merge_sources,
+    modification_data,
+    modification_entry_id,
+    modification_is_custom_entry,
+    modification_type,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
-_PRIORITY = {
-    ModificationType.MERGE: 0,
-    ModificationType.DEVICE: 1,
-    ModificationType.ENTITY: 2,
-}
+ISSUE_MISSING_REFERENCES = "missing_references"
 
 
 class ModificationEngine:
-    """Single orchestrator that holds all handler instances and reacts to config entry lifecycle."""
+    """Single orchestrator for all modifications.
+
+    Every loaded config entry contributes to the desired state of the entities and
+    devices it targets. Whenever a config entry or a targeted registry entry changes,
+    the affected entities and devices are reconciled with their desired state.
+    """
 
     def __init__(self, hass: HomeAssistant, store: OriginalDataStore) -> None:
         """Initialize the engine."""
         self._hass = hass
         self._store = store
-
-        # Tracked config entries keyed by entry_id
-        self._tracked_entries: dict[str, ConfigEntry[Any]] = {}
-
-        # Snapshots of affected IDs at load time, keyed by entry_id.
-        # Used in async_on_entry_updated to detect removals even though
-        # HA mutates ConfigEntry objects in-place.
-        self._tracked_entity_ids: dict[str, set[str]] = {}
-        self._tracked_device_ids: dict[str, set[str]] = {}
-
-        # Handler instances keyed by entity_id / device_id
+        self._config_entries: dict[str, ConfigEntry[Any]] = {}
+        self._targets: dict[str, tuple[set[str], set[str]]] = {}
         self._entity_handlers: dict[str, EntityHandler] = {}
         self._device_handlers: dict[str, DeviceHandler] = {}
+        self._unsub: list[CALLBACK_TYPE] = []
+        self._stale_original_data_forgotten = False
 
-        # Track already-warned (entry_id + "_" + missing_id) to log only once
-        self._warned_missing: set[str] = set()
-
-        # Unsubscribe callbacks for engine-level registry deletion listeners
-        self._unsub_entity_removed: CALLBACK_TYPE | None = None
-        self._unsub_device_removed: CALLBACK_TYPE | None = None
+    @property
+    def store(self) -> OriginalDataStore:
+        """Return the original data store."""
+        return self._store
 
     async def async_start(self) -> None:
-        """Load store. For each existing config entry: call async_on_entry_loaded."""
+        """Load persisted data and start listening for registry updates."""
         await self._store.async_load()
-        self._unsub_entity_removed = self._hass.bus.async_listen(
-            er.EVENT_ENTITY_REGISTRY_UPDATED,
-            self._async_on_entity_registry_updated,
-        )
-        self._unsub_device_removed = self._hass.bus.async_listen(
-            dr.EVENT_DEVICE_REGISTRY_UPDATED,
-            self._async_on_device_registry_updated,
-        )
-
-    async def async_stop(self) -> None:
-        """Revert all handlers, stop all listeners, clear state."""
-        for entity_handler in list(self._entity_handlers.values()):
-            try:
-                await entity_handler.async_revert()
-            except Exception:
-                _LOGGER.exception("Error reverting entity handler %s", entity_handler.entry_id)
-            await entity_handler.async_stop_listening()
-
-        for device_handler in list(self._device_handlers.values()):
-            try:
-                await device_handler.async_revert()
-            except Exception:
-                _LOGGER.exception("Error reverting device handler %s", device_handler.entry_id)
-            await device_handler.async_stop_listening()
-
-        self._entity_handlers.clear()
-        self._device_handlers.clear()
-        self._tracked_entries.clear()
-        self._tracked_entity_ids.clear()
-        self._tracked_device_ids.clear()
-
-        if self._unsub_entity_removed is not None:
-            self._unsub_entity_removed()
-            self._unsub_entity_removed = None
-        if self._unsub_device_removed is not None:
-            self._unsub_device_removed()
-            self._unsub_device_removed = None
-
-    async def async_on_entry_loaded(self, config_entry: ConfigEntry[Any]) -> None:
-        """Handle a config entry being set up.
-
-        1. Determine affected entity_ids and device_ids
-        2. For each: if handler doesn't exist yet, create it
-        3. For each: if original_data not in store, read current registry state and store it
-        4. For each: call handler.async_apply(all entries for this entity/device)
-        5. Start listening if not already
-        """
-        self._tracked_entries[config_entry.entry_id] = config_entry
-
-        mod_type = ModificationType(config_entry.data[CONF_MODIFICATION_TYPE])
-        modification_entry_id: str | None = config_entry.data.get(CONF_MODIFICATION_ENTRY_ID)
-        modification_is_custom_entry: bool = config_entry.data.get(
-            CONF_MODIFICATION_IS_CUSTOM_ENTRY, False
-        )
-        title: str = config_entry.title
-
-        entity_registry = er.async_get(self._hass)
-        device_registry = dr.async_get(self._hass)
-
-        # --- Graceful handling of deleted targets / sources ---
-
-        # ENTITY modification: check that the referenced entity still exists
-        if mod_type == ModificationType.ENTITY and modification_entry_id:
-            if entity_registry.async_get(modification_entry_id) is None:
-                warn_key = f"{config_entry.entry_id}_{modification_entry_id}"
-                if warn_key not in self._warned_missing:
-                    self._warned_missing.add(warn_key)
-                    _LOGGER.warning(
-                        "Entity %s referenced by modification '%s' no longer exists. "
-                        "Disabling modification.",
-                        modification_entry_id,
-                        title,
-                    )
-                await self._hass.config_entries.async_set_disabled_by(
-                    config_entry.entry_id,
-                    ConfigEntryDisabler.USER,
-                )
-                return
-
-        # DEVICE modification (non-creation): check that the referenced device still exists
-        if (
-            mod_type == ModificationType.DEVICE
-            and not modification_is_custom_entry
-            and modification_entry_id
-        ):
-            if device_registry.async_get(modification_entry_id) is None:
-                warn_key = f"{config_entry.entry_id}_{modification_entry_id}"
-                if warn_key not in self._warned_missing:
-                    self._warned_missing.add(warn_key)
-                    _LOGGER.warning(
-                        "Device %s referenced by modification '%s' no longer exists. "
-                        "Disabling modification.",
-                        modification_entry_id,
-                        title,
-                    )
-                await self._hass.config_entries.async_set_disabled_by(
-                    config_entry.entry_id,
-                    ConfigEntryDisabler.USER,
-                )
-                return
-
-        # MERGE modification: remove any source devices that no longer exist
-        if mod_type == ModificationType.MERGE:
-            original_data: dict[str, Any] = config_entry.data.get(
-                CONF_MODIFICATION_ORIGINAL_DATA, {}
+        self._unsub = [
+            self._hass.bus.async_listen(
+                er.EVENT_ENTITY_REGISTRY_UPDATED,
+                self._async_on_entity_registry_updated,
+            ),
+            self._hass.bus.async_listen(
+                dr.EVENT_DEVICE_REGISTRY_UPDATED,
+                self._async_on_device_registry_updated,
+            ),
+        ]
+        if self._hass.state is not CoreState.running:
+            self._hass.bus.async_listen_once(
+                EVENT_HOMEASSISTANT_STARTED, self._async_on_started
             )
-            missing_sources = [
-                device_id
-                for device_id in original_data
-                if device_registry.async_get(device_id) is None
-            ]
-            if missing_sources:
-                new_original_data = {
-                    k: v for k, v in original_data.items() if k not in missing_sources
-                }
-                for missing_id in missing_sources:
-                    warn_key = f"{config_entry.entry_id}_{missing_id}"
-                    if warn_key not in self._warned_missing:
-                        self._warned_missing.add(warn_key)
-                        _LOGGER.warning(
-                            "Device %s referenced by merge modification '%s' no longer "
-                            "exists. Removing from merge sources.",
-                            missing_id,
-                            title,
-                        )
-                self._hass.config_entries.async_update_entry(
-                    config_entry,
-                    data={
-                        **config_entry.data,
-                        CONF_MODIFICATION_ORIGINAL_DATA: new_original_data,
-                    },
-                )
-                # Also remove any stale CONF_MERGE_DEVICE_IDS from options left over
-                # from migration (the options flow does not write this key, so removing
-                # it here keeps data consistent with new entries that never had it).
-                mod_options: dict[str, Any] = config_entry.options.get(
-                    CONF_MODIFICATION_DATA, {}
-                )
-                if CONF_MERGE_DEVICE_IDS in mod_options:
-                    new_mod_options = {
-                        k: v
-                        for k, v in mod_options.items()
-                        if k != CONF_MERGE_DEVICE_IDS
-                    }
-                    self._hass.config_entries.async_update_entry(
-                        config_entry,
-                        options={
-                            **config_entry.options,
-                            CONF_MODIFICATION_DATA: new_mod_options,
-                        },
-                    )
-                # config_entry is mutated in-place by HA; re-read data from it
-                config_entry = self._hass.config_entries.async_get_entry(
-                    config_entry.entry_id
-                ) or config_entry
 
-        # DEVICE modification: remove assigned entities that no longer exist
-        if mod_type == ModificationType.DEVICE:
-            mod_data: dict[str, Any] = config_entry.options.get(CONF_MODIFICATION_DATA, {})
-            assigned: list[str] = mod_data.get(CONF_ASSIGNED_ENTITIES, [])
-            missing_entities = [
-                eid for eid in assigned if entity_registry.async_get(eid) is None
-            ]
-            if missing_entities:
-                new_assigned = [eid for eid in assigned if eid not in missing_entities]
-                for missing_id in missing_entities:
-                    warn_key = f"{config_entry.entry_id}_{missing_id}"
-                    if warn_key not in self._warned_missing:
-                        self._warned_missing.add(warn_key)
-                        _LOGGER.warning(
-                            "Entity %s assigned to device modification '%s' no longer "
-                            "exists. Removing from assigned entities.",
-                            missing_id,
-                            title,
-                        )
-                new_mod_data = {**mod_data, CONF_ASSIGNED_ENTITIES: new_assigned}
-                new_options = {
-                    **config_entry.options,
-                    CONF_MODIFICATION_DATA: new_mod_data,
-                }
-                self._hass.config_entries.async_update_entry(
-                    config_entry,
-                    options=new_options,
-                )
-                config_entry = self._hass.config_entries.async_get_entry(
-                    config_entry.entry_id
-                ) or config_entry
+    @callback
+    def async_stop(self) -> None:
+        """Stop listening for registry updates."""
+        for unsub in self._unsub:
+            unsub()
+        self._unsub.clear()
 
-        # Update the tracked entry reference after potential mutations
-        self._tracked_entries[config_entry.entry_id] = config_entry
+    @callback
+    def _async_on_started(self, _event: Event) -> None:
+        """Handle Home Assistant being started."""
+        self._async_forget_stale_original_data()
 
-        affected_entity_ids = self._get_affected_entity_ids(config_entry)
-        affected_device_ids = self._get_affected_device_ids(config_entry)
+    @callback
+    def _async_forget_stale_original_data(self) -> None:
+        """Forget original values of attributes that no modification controls.
 
-        # Store snapshots of affected IDs so async_on_entry_updated can detect
-        # removals even when HA mutates ConfigEntry objects in-place.
-        self._tracked_entity_ids[config_entry.entry_id] = set(affected_entity_ids)
-        self._tracked_device_ids[config_entry.entry_id] = set(affected_device_ids)
-
-        # Ensure entity handlers and original data
-        for entity_id in affected_entity_ids:
-            if entity_id not in self._entity_handlers:
-                self._entity_handlers[entity_id] = EntityHandler(
-                    self._hass,
-                    entity_id,
-                    self._store,
-                    get_active_entries=functools.partial(
-                        self.get_entries_for_entity, entity_id
-                    ),
-                )
-
-            if self._store.get_entity(entity_id) is None:
-                entity = entity_registry.async_get(entity_id)
-                if entity is not None:
-                    original = {
-                        k: v
-                        for k, v in entity.extended_dict.items()
-                        if k in MODIFIABLE_ATTRIBUTES[ModificationType.ENTITY]
-                    }
-                    await self._store.async_set_entity(entity_id, original)
-
-        # Ensure device handlers and original data
-        for device_id in affected_device_ids:
-            if device_registry.async_get(device_id) is None:
-                _LOGGER.debug(
-                    "Device %s not found in registry, skipping handler creation",
-                    device_id,
-                )
-                continue
-
-            if device_id not in self._device_handlers:
-                self._device_handlers[device_id] = DeviceHandler(
-                    self._hass,
-                    device_id,
-                    self._store,
-                    get_active_entries=functools.partial(
-                        self.get_entries_for_device, device_id
-                    ),
-                )
-
-            if self._store.get_device(device_id) is None:
-                device = device_registry.async_get(device_id)
-                if device is not None:
-                    original = {
-                        k: v
-                        for k, v in device.dict_repr.items()
-                        if k in MODIFIABLE_ATTRIBUTES[ModificationType.DEVICE]
-                    }
-                    await self._store.async_set_device(device_id, original)
-
-        entity_handler: EntityHandler
-        device_handler: DeviceHandler | None
-        # Apply all relevant entries and start listening
-        for entity_id in affected_entity_ids:
-            entity_handler = self._entity_handlers[entity_id]
-            entries = self.get_entries_for_entity(entity_id)
-            await entity_handler.async_apply(entries)
-            await entity_handler.async_start_listening()
-
-        for device_id in affected_device_ids:
-            device_handler = self._device_handlers.get(device_id)
-            if device_handler is None:
-                continue
-            entries = self.get_entries_for_device(device_id)
-            await device_handler.async_apply(entries)
-            await device_handler.async_start_listening()
-
-    async def async_on_entry_unloaded(self, config_entry: ConfigEntry[Any]) -> None:
-        """Handle config entry unload.
-
-        1. If this is a creation-modification (modification_is_custom_entry=True),
-           cascade-update dependent entries (strip stale device_id, remove device
-           from MERGE original_data) BEFORE reverting handlers.
-        2. For affected handlers: revert and stop listening
-        3. Remove config entry from engine's tracking
-        4. For each affected entity/device: if no more config entries reference it,
-           remove handler and remove original_data from store
+        This only happens if a modification could not be unloaded properly, e.g.
+        because it failed to set up. The registry is left untouched in that case,
+        as it is unknown whether the stored values are still accurate. It is done
+        once after all modifications were loaded, or after Home Assistant started.
         """
-        modification_is_custom_entry: bool = config_entry.data.get(
-            CONF_MODIFICATION_IS_CUSTOM_ENTRY, False
-        )
-        mod_type = ModificationType(config_entry.data[CONF_MODIFICATION_TYPE])
-
-        # Collect additional entity IDs affected by cascade when a
-        # creation-modification device is deleted.
-        cascade_entity_ids: set[str] = set()
-
-        if (
-            modification_is_custom_entry
-            and mod_type == ModificationType.DEVICE
-        ):
-            creation_device_id: str = config_entry.data[CONF_MODIFICATION_ENTRY_ID]
-
-            # --- Cascade: dependent ENTITY / DEVICE mods ---
-            dependent_ids = self._find_dependent_entry_ids(
-                creation_device_id, exclude_entry_id=config_entry.entry_id
-            )
-            if dependent_ids:
-                dependent_titles = [
-                    self._tracked_entries[eid].title
-                    for eid in dependent_ids
-                    if eid in self._tracked_entries
-                ]
-                _LOGGER.warning(
-                    "Removing creation-modification device %s while %d dependent "
-                    "modification(s) still reference it: %s. "
-                    "These modifications will be re-applied without the deleted device.",
-                    creation_device_id,
-                    len(dependent_ids),
-                    dependent_titles,
-                )
-
-            for dep_entry_id in dependent_ids:
-                dep_entry = self._tracked_entries.get(dep_entry_id)
-                if dep_entry is None:
-                    continue
-
-                mod_data = dict(
-                    dep_entry.options.get(CONF_MODIFICATION_DATA, {})
-                )
-                if mod_data.get(CONF_DEVICE_ID) == creation_device_id:
-                    mod_data.pop(CONF_DEVICE_ID)
-                    new_options = {
-                        **dep_entry.options,
-                        CONF_MODIFICATION_DATA: mod_data,
-                    }
-                    self._hass.config_entries.async_update_entry(
-                        dep_entry, options=new_options
-                    )
-                    _LOGGER.info(
-                        "Removed stale device_id %s from dependent modification %s",
-                        creation_device_id,
-                        dep_entry.title,
-                    )
-
-                cascade_entity_ids.update(
-                    self._get_affected_entity_ids(dep_entry)
-                )
-
-            # --- Cascade: MERGE mods referencing the deleted device as source ---
-            for entry_id, entry in list(self._tracked_entries.items()):
-                if entry_id == config_entry.entry_id:
-                    continue
-                entry_mod_type = ModificationType(
-                    entry.data[CONF_MODIFICATION_TYPE]
-                )
-                if entry_mod_type != ModificationType.MERGE:
-                    continue
-
-                orig_data = entry.data.get(
-                    CONF_MODIFICATION_ORIGINAL_DATA, {}
-                )
-                if creation_device_id not in orig_data:
-                    continue
-
-                # Collect entity IDs from the deleted device's portion
-                removed_data = orig_data.get(creation_device_id, {})
-                cascade_entity_ids.update(
-                    removed_data.get(CONF_ENTITIES, {}).keys()
-                )
-
-                # Strip the deleted device from the merge's persisted data
-                new_orig_data = {
-                    k: v
-                    for k, v in orig_data.items()
-                    if k != creation_device_id
-                }
-                self._hass.config_entries.async_update_entry(
-                    entry,
-                    data={
-                        **entry.data,
-                        CONF_MODIFICATION_ORIGINAL_DATA: new_orig_data,
-                    },
-                )
-
-                # Update tracked IDs synchronously so any async listener
-                # that fires later sees consistent state.
-                self._tracked_entity_ids[entry_id] = set(
-                    self._get_affected_entity_ids(entry)
-                )
-                self._tracked_device_ids[entry_id] = set(
-                    self._get_affected_device_ids(entry)
-                )
-
-                _LOGGER.info(
-                    "Removed deleted device %s from merge modification %s",
-                    creation_device_id,
-                    entry.title,
-                )
-
-        # Combine directly-affected IDs with cascade-affected IDs
-        affected_entity_ids = (
-            set(self._get_affected_entity_ids(config_entry))
-            | cascade_entity_ids
-        )
-        affected_device_ids = set(self._get_affected_device_ids(config_entry))
-
-        entity_handler: EntityHandler | None
-        device_handler: DeviceHandler | None
-
-        # Revert affected handlers
-        for entity_id in affected_entity_ids:
-            entity_handler = self._entity_handlers.get(entity_id)
-            if entity_handler:
-                await entity_handler.async_revert()
-                await entity_handler.async_stop_listening()
-
-        for device_id in affected_device_ids:
-            device_handler = self._device_handlers.get(device_id)
-            if device_handler:
-                await device_handler.async_revert()
-                await device_handler.async_stop_listening()
-
-        # Remove from tracking
-        self._tracked_entries.pop(config_entry.entry_id, None)
-        self._tracked_entity_ids.pop(config_entry.entry_id, None)
-        self._tracked_device_ids.pop(config_entry.entry_id, None)
-
-        # Clean up handlers that are no longer needed
-        for entity_id in affected_entity_ids:
-            remaining = self.get_entries_for_entity(entity_id)
-            if not remaining:
-                self._entity_handlers.pop(entity_id, None)
-                await self._store.async_remove_entity(entity_id)
-            else:
-                # Re-apply remaining entries
-                entity_handler = self._entity_handlers.get(entity_id)
-                if entity_handler:
-                    await entity_handler.async_apply(remaining)
-                    await entity_handler.async_start_listening()
-
-        for device_id in affected_device_ids:
-            remaining = self.get_entries_for_device(device_id)
-            if not remaining:
-                self._device_handlers.pop(device_id, None)
-                await self._store.async_remove_device(device_id)
-            else:
-                device_handler = self._device_handlers.get(device_id)
-                if device_handler:
-                    await device_handler.async_apply(remaining)
-                    await device_handler.async_start_listening()
-
-    async def async_on_entry_updated(self, config_entry: ConfigEntry[Any]) -> None:
-        """Handle options/data change for a config entry.
-
-        1. Revert all affected handlers
-        2. Update engine's tracking
-        3. Re-apply all affected handlers
-        """
-        # Use stored ID snapshots rather than re-computing from the old entry object,
-        # because HA mutates ConfigEntry objects in-place — the stored reference would
-        # already reflect the new state before we get here.
-        old_entity_ids: set[str] = self._tracked_entity_ids.get(
-            config_entry.entry_id, set()
-        )
-        old_device_ids: set[str] = self._tracked_device_ids.get(
-            config_entry.entry_id, set()
-        )
-
-        new_entity_ids = set(self._get_affected_entity_ids(config_entry))
-        new_device_ids = set(self._get_affected_device_ids(config_entry))
-
-        all_entity_ids = old_entity_ids | new_entity_ids
-        all_device_ids = old_device_ids | new_device_ids
-
-        entity_handler: EntityHandler | None
-        device_handler: DeviceHandler | None
-
-        # Revert affected handlers
-        for entity_id in all_entity_ids:
-            entity_handler = self._entity_handlers.get(entity_id)
-            if entity_handler:
-                await entity_handler.async_revert()
-                await entity_handler.async_stop_listening()
-
-        for device_id in all_device_ids:
-            device_handler = self._device_handlers.get(device_id)
-            if device_handler:
-                await device_handler.async_revert()
-                await device_handler.async_stop_listening()
-
-        # Update tracking with the new entry and updated snapshots
-        self._tracked_entries[config_entry.entry_id] = config_entry
-        self._tracked_entity_ids[config_entry.entry_id] = new_entity_ids
-        self._tracked_device_ids[config_entry.entry_id] = new_device_ids
-
-        # Re-apply
-        for entity_id in all_entity_ids:
-            entries = self.get_entries_for_entity(entity_id)
-            if not entries:
-                self._entity_handlers.pop(entity_id, None)
-                await self._store.async_remove_entity(entity_id)
-                continue
-            entity_handler = self._entity_handlers.get(entity_id)
-            if entity_handler:
-                await entity_handler.async_apply(entries)
-                await entity_handler.async_start_listening()
-
-        for device_id in all_device_ids:
-            entries = self.get_entries_for_device(device_id)
-            if not entries:
-                self._device_handlers.pop(device_id, None)
-                await self._store.async_remove_device(device_id)
-                continue
-            device_handler = self._device_handlers.get(device_id)
-            if device_handler:
-                await device_handler.async_apply(entries)
-                await device_handler.async_start_listening()
-
-    def _get_affected_entity_ids(self, config_entry: ConfigEntry[Any]) -> list[str]:
-        """Return entity_ids affected by this config entry.
-
-        ENTITY -> [modification_entry_id]
-        DEVICE -> CONF_ASSIGNED_ENTITIES (may be empty list)
-        MERGE  -> all entity_ids across all merged devices (from CONF_MODIFICATION_ORIGINAL_DATA)
-        """
-        mod_type = ModificationType(config_entry.data[CONF_MODIFICATION_TYPE])
-        mod_data: dict[str, Any] = config_entry.options.get(CONF_MODIFICATION_DATA, {})
-
-        if mod_type == ModificationType.ENTITY:
-            return [config_entry.data[CONF_MODIFICATION_ENTRY_ID]]
-        if mod_type == ModificationType.DEVICE:
-            return list(mod_data.get(CONF_ASSIGNED_ENTITIES, []))
-        if mod_type == ModificationType.MERGE:
-            original_data = config_entry.data.get(CONF_MODIFICATION_ORIGINAL_DATA, {})
-            entity_ids: list[str] = []
-            for device_data in original_data.values():
-                entities = device_data.get(CONF_ENTITIES, {})
-                entity_ids.extend(entities.keys())
-            return entity_ids
-        return []
-
-    def _get_affected_device_ids(self, config_entry: ConfigEntry[Any]) -> list[str]:
-        """Return device_ids affected by this config entry.
-
-        DEVICE -> [modification_entry_id]
-        MERGE  -> [modification_entry_id] + list of merged device_ids
-        ENTITY -> []
-        """
-        mod_type = ModificationType(config_entry.data[CONF_MODIFICATION_TYPE])
-
-        if mod_type == ModificationType.DEVICE:
-            return [config_entry.data[CONF_MODIFICATION_ENTRY_ID]]
-        if mod_type == ModificationType.MERGE:
-            original_data = config_entry.data.get(CONF_MODIFICATION_ORIGINAL_DATA, {})
-            device_ids = [config_entry.data[CONF_MODIFICATION_ENTRY_ID]]
-            device_ids.extend(original_data.keys())
-            return device_ids
-        return []
-
-    def get_entries_for_entity(self, entity_id: str) -> list[ConfigEntry[Any]]:
-        """Return all tracked config entries affecting this entity_id, in priority order.
-
-        MERGE first, then DEVICE, then ENTITY.
-        """
-        result: list[ConfigEntry[Any]] = []
-        for entry in self._tracked_entries.values():
-            affected = self._get_affected_entity_ids(entry)
-            if entity_id in affected:
-                result.append(entry)
-
-        result.sort(
-            key=lambda e: _PRIORITY.get(
-                ModificationType(e.data[CONF_MODIFICATION_TYPE]), 99
-            )
-        )
-        return result
-
-    def get_entries_for_device(self, device_id: str) -> list[ConfigEntry[Any]]:
-        """Return all tracked config entries affecting this device_id, in priority order.
-
-        MERGE first, then DEVICE.
-        """
-        result: list[ConfigEntry[Any]] = []
-        for entry in self._tracked_entries.values():
-            affected = self._get_affected_device_ids(entry)
-            if device_id in affected:
-                result.append(entry)
-
-        result.sort(
-            key=lambda e: _PRIORITY.get(
-                ModificationType(e.data[CONF_MODIFICATION_TYPE]), 99
-            )
-        )
-        return result
-
-    def _find_dependent_entry_ids(
-        self, device_id: str, exclude_entry_id: str | None = None
-    ) -> list[str]:
-        """Return entry_ids of tracked modifications that reference device_id.
-
-        This finds:
-        - ENTITY modifications whose CONF_DEVICE_ID in modification_data equals device_id
-        - DEVICE modifications with CONF_ASSIGNED_ENTITIES that are assigned to device_id
-          (i.e. the modification's own entry_id is device_id)
-
-        Args:
-            device_id: The device ID to search for as a reference target.
-            exclude_entry_id: An entry_id to exclude from the results (typically the
-                creation-modification entry being unloaded).
-
-        Returns:
-            A list of config entry_ids that depend on the given device_id.
-
-        """
-        dependent: list[str] = []
-        for entry_id, entry in self._tracked_entries.items():
-            if entry_id == exclude_entry_id:
-                continue
-            mod_type = ModificationType(entry.data[CONF_MODIFICATION_TYPE])
-            mod_data: dict[str, Any] = entry.options.get(CONF_MODIFICATION_DATA, {})
-            if mod_type == ModificationType.ENTITY:
-                if mod_data.get(CONF_DEVICE_ID) == device_id:
-                    dependent.append(entry_id)
-            elif mod_type == ModificationType.DEVICE:
-                if entry.data.get(CONF_MODIFICATION_ENTRY_ID) == device_id:
-                    dependent.append(entry_id)
-        return dependent
-
-    async def _async_on_entity_registry_updated(
-        self,
-        event: Event[er.EventEntityRegistryUpdatedData],
-    ) -> None:
-        """React to entity-registry events at the engine level.
-
-        Handles ``action == "remove"``: an entity that was the *target* of an
-        ENTITY modification is disabled; an entity that was *assigned* to a
-        DEVICE modification is removed from its ``CONF_ASSIGNED_ENTITIES`` list.
-        All other actions are ignored here (individual entity handlers react to
-        "update" actions themselves).
-        """
-        if event.data["action"] != "remove":
+        if self._stale_original_data_forgotten:
             return
-        removed_entity_id: str = event.data["entity_id"]
-
-        for entry in list(self._tracked_entries.values()):
-            mod_type = ModificationType(entry.data[CONF_MODIFICATION_TYPE])
-            entry_target_id: str | None = entry.data.get(CONF_MODIFICATION_ENTRY_ID)
-
-            if mod_type == ModificationType.ENTITY and entry_target_id == removed_entity_id:
-                warn_key = f"{entry.entry_id}_{removed_entity_id}"
-                if warn_key not in self._warned_missing:
-                    self._warned_missing.add(warn_key)
-                    _LOGGER.warning(
-                        "Entity %s referenced by modification '%s' no longer exists. "
-                        "Disabling modification.",
-                        removed_entity_id,
-                        entry.title,
-                    )
-                await self._hass.config_entries.async_set_disabled_by(
-                    entry.entry_id,
-                    ConfigEntryDisabler.USER,
-                )
-
-            elif mod_type == ModificationType.DEVICE:
-                mod_data: dict[str, Any] = entry.options.get(CONF_MODIFICATION_DATA, {})
-                assigned: list[str] = mod_data.get(CONF_ASSIGNED_ENTITIES, [])
-                if removed_entity_id in assigned:
-                    new_assigned = [eid for eid in assigned if eid != removed_entity_id]
-                    warn_key = f"{entry.entry_id}_{removed_entity_id}"
-                    if warn_key not in self._warned_missing:
-                        self._warned_missing.add(warn_key)
-                        _LOGGER.warning(
-                            "Entity %s assigned to device modification '%s' no longer "
-                            "exists. Removing from assigned entities.",
-                            removed_entity_id,
-                            entry.title,
+        self._stale_original_data_forgotten = True
+        for kind, desired_data in (
+            (KIND_ENTITIES, self.get_desired_entity_data),
+            (KIND_DEVICES, self.get_desired_device_data),
+        ):
+            for target_id in self._store.target_ids(kind):
+                desired = desired_data(target_id)
+                for key in self._store.get(kind, target_id):
+                    if key not in desired:
+                        _LOGGER.debug(
+                            "Forgetting stale original value of %s of %s %s",
+                            key,
+                            kind,
+                            target_id,
                         )
-                    new_mod_data = {**mod_data, CONF_ASSIGNED_ENTITIES: new_assigned}
-                    self._hass.config_entries.async_update_entry(
-                        entry,
-                        options={**entry.options, CONF_MODIFICATION_DATA: new_mod_data},
-                    )
+                        self._store.async_remove(kind, target_id, key)
 
-    async def _async_on_device_registry_updated(
-        self,
-        event: Event[dr.EventDeviceRegistryUpdatedData],
-    ) -> None:
-        """React to device-registry events at the engine level.
+    @callback
+    def async_on_entry_loaded(self, config_entry: ConfigEntry[Any]) -> None:
+        """Start applying a modification."""
+        self._async_discover_merge_entities(config_entry)
+        self._config_entries[config_entry.entry_id] = config_entry
+        self._targets[config_entry.entry_id] = self.get_targets(config_entry)
+        self._async_reconcile_targets(
+            *self._targets[config_entry.entry_id], release=False
+        )
+        self._async_update_issue(config_entry)
+        if all(
+            entry.entry_id in self._config_entries
+            for entry in self._hass.config_entries.async_entries(
+                DOMAIN, include_ignore=False, include_disabled=False
+            )
+        ):
+            self._async_forget_stale_original_data()
 
-        Handles ``action == "remove"``: a device that was the *target* of a
-        non-creation DEVICE modification is disabled; a device that was a
-        *source* in a MERGE modification is removed from
-        ``CONF_MODIFICATION_ORIGINAL_DATA``.
-        All other actions are ignored here (individual device handlers react
-        to "update" actions themselves).
-        """
-        if event.data["action"] != "remove":
+    @callback
+    def async_on_entry_updated(self, config_entry: ConfigEntry[Any]) -> None:
+        """Re-apply a modification after its data or options changed."""
+        if config_entry.entry_id not in self._config_entries:
             return
-        removed_device_id: str = event.data["device_id"]
+        self._async_discover_merge_entities(config_entry)
+        old_entity_ids, old_device_ids = self._targets[config_entry.entry_id]
+        entity_ids, device_ids = self._targets[config_entry.entry_id] = (
+            self.get_targets(config_entry)
+        )
+        self._async_reconcile_targets(
+            old_entity_ids | entity_ids, old_device_ids | device_ids, release=True
+        )
+        self._async_update_issue(config_entry)
 
-        for entry in list(self._tracked_entries.values()):
-            mod_type = ModificationType(entry.data[CONF_MODIFICATION_TYPE])
-            entry_target_id: str | None = entry.data.get(CONF_MODIFICATION_ENTRY_ID)
-            modification_is_custom_entry: bool = entry.data.get(
-                CONF_MODIFICATION_IS_CUSTOM_ENTRY, False
+    @callback
+    def async_on_entry_unloaded(self, config_entry: ConfigEntry[Any]) -> None:
+        """Stop applying a modification and restore the original values."""
+        if config_entry.entry_id not in self._config_entries:
+            return
+        del self._config_entries[config_entry.entry_id]
+        entity_ids, device_ids = self._targets.pop(config_entry.entry_id)
+        self._async_reconcile_targets(entity_ids, device_ids, release=True)
+
+    @callback
+    def async_on_entry_removed(self, config_entry: ConfigEntry[Any]) -> None:
+        """Clean up after a modification was removed."""
+        ir.async_delete_issue(
+            self._hass, DOMAIN, f"{ISSUE_MISSING_REFERENCES}_{config_entry.entry_id}"
+        )
+        if not modification_is_custom_entry(config_entry):
+            return
+        self._async_remove_device_references(modification_entry_id(config_entry))
+
+    @callback
+    def _async_remove_device_references(self, device_id: str) -> None:
+        """Remove references to a device that was removed with its modification."""
+        for config_entry in list(self._config_entries.values()):
+            data = dict(config_entry.data)
+            options = modification_data(config_entry)
+            match modification_type(config_entry):
+                case ModificationType.ENTITY:
+                    if options.get(CONF_DEVICE_ID) != device_id:
+                        continue
+                    del options[CONF_DEVICE_ID]
+                case ModificationType.DEVICE:
+                    if options.get(CONF_VIA_DEVICE_ID) != device_id:
+                        continue
+                    del options[CONF_VIA_DEVICE_ID]
+                case ModificationType.MERGE:
+                    sources = dict(data.get(CONF_MODIFICATION_ORIGINAL_DATA, {}))
+                    if sources.pop(device_id, None) is None:
+                        continue
+                    data[CONF_MODIFICATION_ORIGINAL_DATA] = sources
+            _LOGGER.info(
+                "Removing reference to removed device %s from modification %s",
+                device_id,
+                config_entry.title,
+            )
+            self._hass.config_entries.async_update_entry(
+                config_entry,
+                data=data,
+                options={**config_entry.options, CONF_MODIFICATION_DATA: options},
             )
 
+    def get_config_entries(self) -> list[ConfigEntry[Any]]:
+        """Return all loaded modifications."""
+        return list(self._config_entries.values())
+
+    def get_desired_entity_data(self, entity_id: str) -> dict[str, Any]:
+        """Return the attribute values all modifications want an entity to have."""
+        desired_data: dict[str, Any] = {}
+        for config_entry in self._sorted_config_entries():
+            match modification_type(config_entry):
+                case ModificationType.DEVICE:
+                    if entity_id in assigned_entities(config_entry):
+                        desired_data[CONF_DEVICE_ID] = modification_entry_id(
+                            config_entry
+                        )
+                case ModificationType.MERGE:
+                    if any(
+                        entity_id in entity_ids
+                        for entity_ids in merge_sources(config_entry).values()
+                    ):
+                        desired_data[CONF_DEVICE_ID] = modification_entry_id(
+                            config_entry
+                        )
+                case ModificationType.ENTITY:
+                    if modification_entry_id(config_entry) == entity_id:
+                        desired_data.update(
+                            _filter_data(
+                                ModificationType.ENTITY, modification_data(config_entry)
+                            )
+                        )
+
+        if (device_id := desired_data.get(CONF_DEVICE_ID)) is not None and (
+            async_get_device(self._hass, device_id) is None
+        ):
+            del desired_data[CONF_DEVICE_ID]
+        return desired_data
+
+    def get_desired_device_data(self, device_id: str) -> dict[str, Any]:
+        """Return the attribute values all modifications want a device to have."""
+        desired_data: dict[str, Any] = {}
+        for config_entry in self._sorted_config_entries():
             if (
-                mod_type == ModificationType.DEVICE
-                and not modification_is_custom_entry
-                and entry_target_id == removed_device_id
+                modification_type(config_entry) == ModificationType.DEVICE
+                and modification_entry_id(config_entry) == device_id
             ):
-                warn_key = f"{entry.entry_id}_{removed_device_id}"
-                if warn_key not in self._warned_missing:
-                    self._warned_missing.add(warn_key)
-                    _LOGGER.warning(
-                        "Device %s referenced by modification '%s' no longer exists. "
-                        "Disabling modification.",
-                        removed_device_id,
-                        entry.title,
+                desired_data.update(
+                    _filter_data(
+                        ModificationType.DEVICE, modification_data(config_entry)
                     )
-                await self._hass.config_entries.async_set_disabled_by(
-                    entry.entry_id,
-                    ConfigEntryDisabler.USER,
                 )
 
-            elif mod_type == ModificationType.MERGE:
-                original_data: dict[str, Any] = entry.data.get(
-                    CONF_MODIFICATION_ORIGINAL_DATA, {}
-                )
-                if removed_device_id in original_data:
-                    new_original_data = {
-                        k: v
-                        for k, v in original_data.items()
-                        if k != removed_device_id
-                    }
-                    warn_key = f"{entry.entry_id}_{removed_device_id}"
-                    if warn_key not in self._warned_missing:
-                        self._warned_missing.add(warn_key)
-                        _LOGGER.warning(
-                            "Device %s referenced by merge modification '%s' no longer "
-                            "exists. Removing from merge sources.",
-                            removed_device_id,
-                            entry.title,
-                        )
-                    self._hass.config_entries.async_update_entry(
-                        entry,
-                        data={
-                            **entry.data,
-                            CONF_MODIFICATION_ORIGINAL_DATA: new_original_data,
-                        },
+        if (via_device_id := desired_data.get(CONF_VIA_DEVICE_ID)) is not None and (
+            via_device_id == device_id
+            or async_get_device(self._hass, via_device_id) is None
+        ):
+            del desired_data[CONF_VIA_DEVICE_ID]
+        return desired_data
+
+    def get_original_entity_data(self, entity_id: str) -> dict[str, Any]:
+        """Return the attribute values an entity would have without modifications."""
+        return {
+            **EntityHandler(self._hass, entity_id, self._store).current_data,
+            **self._store.get(KIND_ENTITIES, entity_id),
+        }
+
+    def get_original_device_data(self, device_id: str) -> dict[str, Any]:
+        """Return the attribute values a device would have without modifications."""
+        return {
+            **DeviceHandler(self._hass, device_id, self._store).current_data,
+            **self._store.get(KIND_DEVICES, device_id),
+        }
+
+    def _sorted_config_entries(self) -> list[ConfigEntry[Any]]:
+        """Return all loaded modifications in ascending order of precedence."""
+        return sorted(
+            self._config_entries.values(),
+            key=lambda config_entry: MODIFICATION_PRECEDENCE[
+                modification_type(config_entry)
+            ],
+        )
+
+    def get_targets(self, config_entry: ConfigEntry[Any]) -> tuple[set[str], set[str]]:
+        """Return the entity ids and device ids a modification targets."""
+        match modification_type(config_entry):
+            case ModificationType.ENTITY:
+                return {modification_entry_id(config_entry)}, set()
+            case ModificationType.DEVICE:
+                return set(assigned_entities(config_entry)), {
+                    modification_entry_id(config_entry)
+                }
+            case ModificationType.MERGE:
+                return {
+                    entity_id
+                    for entity_ids in merge_sources(config_entry).values()
+                    for entity_id in entity_ids
+                }, set()
+
+    @callback
+    def _async_reconcile_targets(
+        self, entity_ids: Iterable[str], device_ids: Iterable[str], *, release: bool
+    ) -> None:
+        """Reconcile entities and devices with their desired state."""
+        for device_id in device_ids:
+            self._async_reconcile(
+                self._device_handlers,
+                DeviceHandler,
+                device_id,
+                self.get_desired_device_data(device_id),
+                release=release,
+            )
+        for entity_id in entity_ids:
+            self._async_reconcile(
+                self._entity_handlers,
+                EntityHandler,
+                entity_id,
+                self.get_desired_entity_data(entity_id),
+                release=release,
+            )
+
+    @callback
+    def _async_reconcile[HandlerT: EntryHandler](
+        self,
+        handlers: dict[str, HandlerT],
+        handler_type: type[HandlerT],
+        target_id: str,
+        desired_data: dict[str, Any],
+        *,
+        release: bool,
+    ) -> None:
+        """Reconcile a single entity or device with its desired state."""
+        if (handler := handlers.get(target_id)) is None:
+            handler = handlers[target_id] = handler_type(
+                self._hass, target_id, self._store
+            )
+        handler.async_reconcile(desired_data, release=release)
+        if not desired_data and not handler.original_data:
+            del handlers[target_id]
+
+    @callback
+    def _async_on_entity_registry_updated(
+        self, event: Event[er.EventEntityRegistryUpdatedData]
+    ) -> None:
+        """Handle an entity registry update."""
+        entity_id = event.data["entity_id"]
+        match event.data:
+            case {"action": "update", "old_entity_id": old_entity_id} if (
+                old_entity_id != entity_id
+            ):
+                self._async_on_entity_renamed(old_entity_id, entity_id)
+            case {"action": "update", "changes": changes}:
+                if CONF_DEVICE_ID in changes:
+                    self._async_discover_merge_entity(entity_id)
+                if (handler := self._entity_handlers.get(entity_id)) is not None:
+                    handler.async_on_registry_updated(
+                        self.get_desired_entity_data(entity_id), changes
                     )
+            case {"action": "create"}:
+                self._async_discover_merge_entity(entity_id)
+                self._async_on_reference_changed(entity_id=entity_id)
+            case {"action": "remove"}:
+                self._async_on_entity_removed(entity_id)
+
+    @callback
+    def _async_on_device_registry_updated(
+        self, event: Event[dr.EventDeviceRegistryUpdatedData]
+    ) -> None:
+        """Handle a device registry update."""
+        device_id = event.data["device_id"]
+        match event.data:
+            case {"action": "update", "changes": changes}:
+                if (handler := self._device_handlers.get(device_id)) is not None:
+                    handler.async_on_registry_updated(
+                        self.get_desired_device_data(device_id), changes
+                    )
+            case {"action": "create"}:
+                self._async_on_reference_changed(device_id=device_id)
+            case {"action": "remove"}:
+                self._async_on_device_removed(device_id)
+
+    @callback
+    def _async_on_entity_renamed(self, old_entity_id: str, entity_id: str) -> None:
+        """Follow an entity id change in all modifications."""
+        if (handler := self._entity_handlers.pop(old_entity_id, None)) is not None:
+            handler.async_rename(entity_id)
+            self._entity_handlers[entity_id] = handler
+        else:
+            self._store.async_rename(KIND_ENTITIES, old_entity_id, entity_id)
+
+        for config_entry_id, (entity_ids, device_ids) in self._targets.items():
+            if old_entity_id in entity_ids:
+                self._targets[config_entry_id] = (
+                    (entity_ids - {old_entity_id}) | {entity_id},
+                    device_ids,
+                )
+
+        for config_entry in self._hass.config_entries.async_entries(DOMAIN):
+            if (data := _rename_entity(config_entry, old_entity_id, entity_id)) is None:
+                continue
+            _LOGGER.info(
+                "Entity %s was renamed to %s, updating modification %s",
+                old_entity_id,
+                entity_id,
+                config_entry.title,
+            )
+            self._hass.config_entries.async_update_entry(config_entry, **data)
+
+    @callback
+    def _async_on_entity_removed(self, entity_id: str) -> None:
+        """Forget an entity that was removed from the registry."""
+        self._entity_handlers.pop(entity_id, None)
+        self._store.async_remove(KIND_ENTITIES, entity_id)
+
+        for config_entry in list(self._config_entries.values()):
+            if modification_type(config_entry) != ModificationType.MERGE:
+                continue
+            sources = config_entry.data.get(CONF_MODIFICATION_ORIGINAL_DATA, {})
+            if not any(
+                entity_id in entity_ids
+                for entity_ids in merge_sources(config_entry).values()
+            ):
+                continue
+            self._hass.config_entries.async_update_entry(
+                config_entry,
+                data={
+                    **config_entry.data,
+                    CONF_MODIFICATION_ORIGINAL_DATA: {
+                        device_id: {
+                            **device_data,
+                            CONF_ENTITIES: {
+                                key: value
+                                for key, value in device_data.get(
+                                    CONF_ENTITIES, {}
+                                ).items()
+                                if key != entity_id
+                            },
+                        }
+                        for device_id, device_data in sources.items()
+                    },
+                },
+            )
+
+        self._async_on_reference_changed(entity_id=entity_id)
+
+    @callback
+    def _async_on_device_removed(self, device_id: str) -> None:
+        """Forget a device that was removed from the registry."""
+        self._device_handlers.pop(device_id, None)
+        self._store.async_remove(KIND_DEVICES, device_id)
+
+        for config_entry in list(self._config_entries.values()):
+            if modification_type(config_entry) != ModificationType.MERGE:
+                continue
+            sources = dict(config_entry.data.get(CONF_MODIFICATION_ORIGINAL_DATA, {}))
+            if sources.pop(device_id, None) is None:
+                continue
+            _LOGGER.info(
+                "Device %s was removed, removing it from merge modification %s",
+                device_id,
+                config_entry.title,
+            )
+            self._hass.config_entries.async_update_entry(
+                config_entry,
+                data={**config_entry.data, CONF_MODIFICATION_ORIGINAL_DATA: sources},
+            )
+
+        self._async_on_reference_changed(device_id=device_id)
+
+    @callback
+    def _async_on_reference_changed(
+        self, *, entity_id: str | None = None, device_id: str | None = None
+    ) -> None:
+        """Re-apply modifications referencing an entity or device that appeared or vanished."""
+        for config_entry in list(self._config_entries.values()):
+            if not _references(config_entry, entity_id=entity_id, device_id=device_id):
+                continue
+            self._async_reconcile_targets(
+                *self._targets[config_entry.entry_id], release=True
+            )
+            self._async_update_issue(config_entry)
+
+    @callback
+    def _async_discover_merge_entities(self, config_entry: ConfigEntry[Any]) -> None:
+        """Add entities that were added to merged devices to a merge modification."""
+        if modification_type(config_entry) != ModificationType.MERGE:
+            return
+        sources: dict[str, Any] = config_entry.data.get(
+            CONF_MODIFICATION_ORIGINAL_DATA, {}
+        )
+        new_sources = {
+            device_id: {
+                **device_data,
+                CONF_ENTITIES: {
+                    **device_data.get(CONF_ENTITIES, {}),
+                    **{
+                        entity_id: {}
+                        for entity_id in self._get_entities_of_device(device_id)
+                        if entity_id not in device_data.get(CONF_ENTITIES, {})
+                    },
+                },
+            }
+            for device_id, device_data in sources.items()
+        }
+        if new_sources == sources:
+            return
+        _LOGGER.debug(
+            "Discovered new entities for merge modification %s", config_entry.title
+        )
+        self._hass.config_entries.async_update_entry(
+            config_entry,
+            data={**config_entry.data, CONF_MODIFICATION_ORIGINAL_DATA: new_sources},
+        )
+
+    def _get_entities_of_device(self, device_id: str) -> list[str]:
+        """Return the entities of a device, including ones moved away by modifications."""
+        entity_registry = er.async_get(self._hass)
+        return [
+            entity.entity_id
+            for entity in er.async_entries_for_device(
+                entity_registry, device_id, include_disabled_entities=True
+            )
+        ] + [
+            entity_id
+            for entity_id in self._store.target_ids(KIND_ENTITIES)
+            if self._store.get(KIND_ENTITIES, entity_id).get(CONF_DEVICE_ID)
+            == device_id
+        ]
+
+    @callback
+    def _async_discover_merge_entity(self, entity_id: str) -> None:
+        """Add an entity to a merge modification if it belongs to a merged device."""
+        entity_registry = er.async_get(self._hass)
+        if (
+            entity := entity_registry.async_get(entity_id)
+        ) is None or entity.device_id is None:
+            return
+        for config_entry in list(self._config_entries.values()):
+            if modification_type(config_entry) != ModificationType.MERGE:
+                continue
+            sources = merge_sources(config_entry)
+            if (
+                entity.device_id not in sources
+                or entity_id in sources[entity.device_id]
+            ):
+                continue
+            self._async_discover_merge_entities(config_entry)
+
+    @callback
+    def _async_update_issue(self, config_entry: ConfigEntry[Any]) -> None:
+        """Create or delete the repair issue about missing references of a modification."""
+        issue_id = f"{ISSUE_MISSING_REFERENCES}_{config_entry.entry_id}"
+        if not (missing := self._get_missing_references(config_entry)):
+            ir.async_delete_issue(self._hass, DOMAIN, issue_id)
+            return
+        ir.async_create_issue(
+            self._hass,
+            DOMAIN,
+            issue_id,
+            is_fixable=False,
+            is_persistent=False,
+            severity=ir.IssueSeverity.WARNING,
+            translation_key=ISSUE_MISSING_REFERENCES,
+            translation_placeholders={
+                "title": config_entry.title,
+                "references": ", ".join(sorted(missing)),
+            },
+        )
+
+    def _get_missing_references(self, config_entry: ConfigEntry[Any]) -> set[str]:
+        """Return the entity ids and device ids a modification references but which do not exist."""
+        entity_registry = er.async_get(self._hass)
+        entity_ids, device_ids = _referenced_ids(config_entry)
+        return {
+            entity_id
+            for entity_id in entity_ids
+            if entity_registry.async_get(entity_id) is None
+        } | {
+            device_id
+            for device_id in device_ids
+            if async_get_device(self._hass, device_id) is None
+        }
+
+
+@callback
+def async_resolve_references(
+    hass: HomeAssistant, config_entry: ConfigEntry[Any]
+) -> dict[str, Any] | None:
+    """Return updated config entry data and options with resolved device ids.
+
+    Devices that were split by Home Assistant 2026.8 get new ids, so references to
+    the old composite device id are replaced by the id of the matching split device.
+    Returns None if nothing needs to be changed.
+    """
+    data = dict(config_entry.data)
+    options = modification_data(config_entry)
+
+    def resolve(device_id: str, owner_config_entry_id: str | None = None) -> str:
+        resolved = async_resolve_device_id(hass, device_id, owner_config_entry_id)
+        if resolved is not None and resolved != device_id:
+            _LOGGER.info(
+                "Device %s referenced by modification %s was split by Home Assistant, "
+                "using device %s instead",
+                device_id,
+                config_entry.title,
+                resolved,
+            )
+            return resolved
+        return device_id
+
+    if modification_type(config_entry) != ModificationType.ENTITY:
+        data[CONF_MODIFICATION_ENTRY_ID] = resolve(
+            modification_entry_id(config_entry),
+            config_entry.entry_id
+            if modification_is_custom_entry(config_entry)
+            else None,
+        )
+    for key in (CONF_DEVICE_ID, CONF_VIA_DEVICE_ID):
+        if (device_id := options.get(key)) is not None:
+            options[key] = resolve(device_id)
+    if modification_type(config_entry) == ModificationType.MERGE:
+        sources: dict[str, Any] = {}
+        for device_id, device_data in data.get(
+            CONF_MODIFICATION_ORIGINAL_DATA, {}
+        ).items():
+            resolved = resolve(device_id)
+            if resolved == data[CONF_MODIFICATION_ENTRY_ID]:
+                continue
+            sources.setdefault(resolved, {CONF_ENTITIES: {}})[CONF_ENTITIES].update(
+                device_data.get(CONF_ENTITIES, {})
+            )
+        data[CONF_MODIFICATION_ORIGINAL_DATA] = sources
+
+    if data == dict(config_entry.data) and options == modification_data(config_entry):
+        return None
+    return {
+        "data": data,
+        "options": {**config_entry.options, CONF_MODIFICATION_DATA: options},
+        "unique_id": f"{modification_type(config_entry)}_{data[CONF_MODIFICATION_ENTRY_ID]}",
+    }
+
+
+def _filter_data(mod_type: ModificationType, data: dict[str, Any]) -> dict[str, Any]:
+    """Return the modifiable attributes of modification data in their JSON form."""
+    return {
+        key: None
+        if (key, value)
+        in (
+            (CONF_ENTITY_CATEGORY, ENTITY_CATEGORY_DEFAULT),
+            (CONF_ENTRY_TYPE, ENTRY_TYPE_NONE),
+        )
+        else value
+        for key, value in data.items()
+        if key in MODIFIABLE_ATTRIBUTES[mod_type]
+    }
+
+
+def _referenced_ids(config_entry: ConfigEntry[Any]) -> tuple[set[str], set[str]]:
+    """Return the entity ids and device ids a modification references."""
+    options = modification_data(config_entry)
+    device_ids = {
+        device_id
+        for key in (CONF_DEVICE_ID, CONF_VIA_DEVICE_ID)
+        if (device_id := options.get(key)) is not None
+    }
+    match modification_type(config_entry):
+        case ModificationType.ENTITY:
+            return {modification_entry_id(config_entry)}, device_ids
+        case ModificationType.DEVICE:
+            return set(assigned_entities(config_entry)), device_ids | {
+                modification_entry_id(config_entry)
+            }
+        case ModificationType.MERGE:
+            return set(), device_ids | {modification_entry_id(config_entry)}
+
+
+def _references(
+    config_entry: ConfigEntry[Any],
+    *,
+    entity_id: str | None = None,
+    device_id: str | None = None,
+) -> bool:
+    """Return whether a modification references an entity or device."""
+    entity_ids, device_ids = _referenced_ids(config_entry)
+    return entity_id in entity_ids or device_id in device_ids
+
+
+def _rename_entity(
+    config_entry: ConfigEntry[Any], old_entity_id: str, entity_id: str
+) -> dict[str, Any] | None:
+    """Return updated config entry fields after an entity id changed."""
+    match modification_type(config_entry):
+        case ModificationType.ENTITY if (
+            modification_entry_id(config_entry) == old_entity_id
+        ):
+            return {
+                "data": {**config_entry.data, CONF_MODIFICATION_ENTRY_ID: entity_id},
+                "unique_id": f"{ModificationType.ENTITY}_{entity_id}",
+            }
+        case ModificationType.DEVICE if old_entity_id in assigned_entities(
+            config_entry
+        ):
+            options = modification_data(config_entry)
+            options[CONF_ASSIGNED_ENTITIES] = [
+                entity_id if assigned == old_entity_id else assigned
+                for assigned in options[CONF_ASSIGNED_ENTITIES]
+            ]
+            return {
+                "options": {**config_entry.options, CONF_MODIFICATION_DATA: options}
+            }
+        case ModificationType.MERGE if any(
+            old_entity_id in entity_ids
+            for entity_ids in merge_sources(config_entry).values()
+        ):
+            sources: dict[str, Any] = config_entry.data[CONF_MODIFICATION_ORIGINAL_DATA]
+            return {
+                "data": {
+                    **config_entry.data,
+                    CONF_MODIFICATION_ORIGINAL_DATA: {
+                        device_id: {
+                            **device_data,
+                            CONF_ENTITIES: {
+                                entity_id if key == old_entity_id else key: value
+                                for key, value in device_data.get(
+                                    CONF_ENTITIES, {}
+                                ).items()
+                            },
+                        }
+                        for device_id, device_data in sources.items()
+                    },
+                }
+            }
+    return None

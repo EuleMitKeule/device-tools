@@ -3,429 +3,223 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from collections.abc import Callable
+from collections.abc import Iterable
 import logging
 from typing import Any
 
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import CALLBACK_TYPE, Event, HomeAssistant
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import device_registry as dr, entity_registry as er
-from homeassistant.helpers.entity_registry import EntityCategory
+from homeassistant.helpers.entity import EntityCategory
 
 from .const import (
-    CONF_ASSIGNED_ENTITIES,
-    CONF_CONNECTIONS,
-    CONF_DEVICE_ID,
     CONF_ENTITY_CATEGORY,
     CONF_ENTRY_TYPE,
-    CONF_IDENTIFIERS,
-    CONF_MODIFICATION_DATA,
-    CONF_MODIFICATION_ENTRY_ID,
-    CONF_MODIFICATION_TYPE,
     MODIFIABLE_ATTRIBUTES,
     ModificationType,
 )
-from .original_data_store import OriginalDataStore
+from .original_data_store import KIND_DEVICES, KIND_ENTITIES, OriginalDataStore
+from .utils import async_get_device
 
 _LOGGER = logging.getLogger(__name__)
 
 
 class EntryHandler(ABC):
-    """Base handler for a single entity or device targeted by one or more config entries."""
+    """Handler for a single registry entry targeted by one or more modifications.
+
+    The handler reconciles the registry entry with the desired state of all
+    modifications targeting it. The original value of every controlled attribute is
+    kept in the original data store, so it can be restored once no modification
+    controls the attribute anymore.
+    """
+
+    kind: str
+    modification_type: ModificationType
 
     def __init__(
         self,
         hass: HomeAssistant,
         entry_id: str,
         store: OriginalDataStore,
-        get_active_entries: Callable[[], list[ConfigEntry[Any]]],
     ) -> None:
         """Initialize the handler."""
         self._hass = hass
         self._entry_id = entry_id
         self._store = store
-        self._get_active_entries = get_active_entries
-        self._unsub_listener: CALLBACK_TYPE | None = None
 
     @property
     def entry_id(self) -> str:
-        """Return the entity_id or device_id this handler manages."""
+        """Return the entity id or device id this handler manages."""
         return self._entry_id
 
-    @abstractmethod
-    def _get_original_data(self) -> dict[str, Any]:
-        """Return original data from store. Raises if not set."""
+    @property
+    def original_data(self) -> dict[str, Any]:
+        """Return the original values of all controlled attributes."""
+        return self._store.get(self.kind, self._entry_id)
+
+    @property
+    def current_data(self) -> dict[str, Any]:
+        """Return the current attribute values of the registry entry."""
+        return self._get_current_data() or {}
 
     @abstractmethod
-    async def async_apply(self, config_entries: list[ConfigEntry[Any]]) -> None:
-        """Apply all relevant config entries in priority order."""
+    def _get_current_data(self) -> dict[str, Any] | None:
+        """Return the current attribute values or None if the entry does not exist."""
 
     @abstractmethod
-    async def async_revert(self) -> None:
-        """Revert to original_data."""
+    def _update(self, changes: dict[str, Any]) -> None:
+        """Write attribute values to the registry."""
 
-    @abstractmethod
-    async def async_start_listening(self) -> None:
-        """Register single registry listener."""
+    @callback
+    def async_rename(self, new_entry_id: str) -> None:
+        """Handle the managed registry entry being renamed."""
+        self._store.async_rename(self.kind, self._entry_id, new_entry_id)
+        self._entry_id = new_entry_id
 
-    async def async_stop_listening(self) -> None:
-        """Unregister registry listener."""
-        if self._unsub_listener is not None:
-            self._unsub_listener()
-            self._unsub_listener = None
+    @callback
+    def async_reconcile(self, desired_data: dict[str, Any], *, release: bool) -> None:
+        """Bring the registry entry in line with the desired state.
+
+        Attributes that are no longer desired are restored to their original values
+        if release is set. Otherwise they are left untouched, which avoids flapping
+        while modifications are still being loaded.
+        """
+        if (current_data := self._get_current_data()) is None:
+            return
+
+        original_data = self.original_data
+        changes: dict[str, Any] = {}
+
+        if release:
+            for key, original_value in original_data.items():
+                if key in desired_data:
+                    continue
+                if current_data.get(key) != original_value:
+                    changes[key] = original_value
+                self._store.async_remove(self.kind, self._entry_id, key)
+
+        for key, value in desired_data.items():
+            if key not in original_data:
+                self._store.async_set(
+                    self.kind, self._entry_id, key, current_data.get(key)
+                )
+            if current_data.get(key) != value:
+                changes[key] = value
+
+        if changes:
+            _LOGGER.debug("Updating %s %s: %s", self.kind, self._entry_id, changes)
+            self._async_update(changes)
+
+    @callback
+    def async_on_registry_updated(
+        self, desired_data: dict[str, Any], changed_keys: Iterable[str]
+    ) -> None:
+        """Handle an update of the registry entry.
+
+        A controlled attribute that differs from its desired value was changed by
+        someone else, most likely the integration owning the entry. The new value
+        becomes the original value before the desired value is applied again.
+        """
+        if (current_data := self._get_current_data()) is None:
+            return
+
+        original_data = self.original_data
+        for key in changed_keys:
+            if key not in desired_data or key not in original_data:
+                continue
+            if (value := current_data.get(key)) == desired_data[key]:
+                continue
+            _LOGGER.debug(
+                "Original value of %s of %s %s changed to %s",
+                key,
+                self.kind,
+                self._entry_id,
+                value,
+            )
+            self._store.async_set(self.kind, self._entry_id, key, value)
+
+        self.async_reconcile(desired_data, release=False)
+
+    @callback
+    def _async_update(self, changes: dict[str, Any]) -> None:
+        """Write changes, falling back to single attributes on failure."""
+        try:
+            self._update(changes)
+        except (HomeAssistantError, ValueError) as err:
+            if len(changes) == 1:
+                _LOGGER.warning(
+                    "Could not update %s of %s %s: %s",
+                    next(iter(changes)),
+                    self.kind,
+                    self._entry_id,
+                    err,
+                )
+                return
+            for key, value in changes.items():
+                self._async_update({key: value})
 
 
 class EntityHandler(EntryHandler):
-    """Handler for a single entity targeted by one or more config entries."""
+    """Handler for a single entity targeted by one or more modifications."""
 
-    def _get_original_data(self) -> dict[str, Any]:
-        """Return original data from store."""
-        data = self._store.get_entity(self._entry_id)
-        if data is None:
-            raise ValueError(
-                f"Original data for entity {self._entry_id} not found in store"
-            )
-        return data
+    kind = KIND_ENTITIES
+    modification_type = ModificationType.ENTITY
 
-    async def async_apply(self, config_entries: list[ConfigEntry[Any]]) -> None:
-        """Apply all relevant config entries in priority order.
-
-        Priority: MERGE first, then DEVICE, then ENTITY.
-        """
-        await self.async_stop_listening()
-        try:
-            merged: dict[str, Any] = {}
-
-            for entry in config_entries:
-                mod_type = ModificationType(entry.data[CONF_MODIFICATION_TYPE])
-                mod_data: dict[str, Any] = entry.options.get(CONF_MODIFICATION_DATA, {})
-                mod_entry_id: str = entry.data[CONF_MODIFICATION_ENTRY_ID]
-
-                if mod_type == ModificationType.MERGE:
-                    merged[CONF_DEVICE_ID] = mod_entry_id
-                elif mod_type == ModificationType.DEVICE:
-                    if (
-                        CONF_ASSIGNED_ENTITIES in mod_data
-                        and self._entry_id in mod_data.get(CONF_ASSIGNED_ENTITIES, [])
-                        and CONF_DEVICE_ID not in merged
-                    ):
-                        merged[CONF_DEVICE_ID] = mod_entry_id
-                elif mod_type == ModificationType.ENTITY:
-                    merged.update(mod_data)
-
-            if not merged:
-                return
-
-            update_kwargs: dict[str, Any] = {
-                key: value
-                for key, value in merged.items()
-                if (
-                    key in MODIFIABLE_ATTRIBUTES[ModificationType.ENTITY]
-                    or key == CONF_DEVICE_ID
-                )
-            }
-
-            if not update_kwargs:
-                return
-
-            if CONF_DEVICE_ID in update_kwargs:
-                target_device_id: str | None = update_kwargs[CONF_DEVICE_ID]
-                if target_device_id is not None:
-                    device_registry = dr.async_get(self._hass)
-                    if device_registry.async_get(target_device_id) is None:
-                        _LOGGER.warning(
-                            "Device %s referenced by entity %s no longer exists, "
-                            "skipping device_id assignment",
-                            target_device_id,
-                            self._entry_id,
-                        )
-                        update_kwargs.pop(CONF_DEVICE_ID, None)
-
-            if not update_kwargs:
-                return
-
-            entity_registry = er.async_get(self._hass)
-            entity = entity_registry.async_get(self._entry_id)
-            if entity is None:
-                _LOGGER.warning("Entity %s not found, cannot apply", self._entry_id)
-                return
-
-            _LOGGER.debug(
-                "Applying entity modifications to %s: %s",
-                self._entry_id,
-                update_kwargs,
-            )
-            if CONF_ENTITY_CATEGORY in update_kwargs:
-                raw = update_kwargs[CONF_ENTITY_CATEGORY]
-                update_kwargs[CONF_ENTITY_CATEGORY] = (
-                    EntityCategory(raw) if raw and raw != "default" else None
-                )
-            entity_registry.async_update_entity(entity.entity_id, **update_kwargs)
-        finally:
-            await self.async_start_listening()
-
-    async def async_revert(self) -> None:
-        """Revert to original_data."""
-        await self.async_stop_listening()
-        try:
-            original = self._get_original_data()
-            entity_registry = er.async_get(self._hass)
-            entity = entity_registry.async_get(self._entry_id)
-            if entity is None:
-                _LOGGER.warning("Entity %s not found, cannot revert", self._entry_id)
-                return
-
-            revert_kwargs: dict[str, Any] = {
-                k: v
-                for k, v in original.items()
-                if k in MODIFIABLE_ATTRIBUTES[ModificationType.ENTITY]
-                or k == CONF_DEVICE_ID
-            }
-
-            if CONF_DEVICE_ID in revert_kwargs:
-                original_device_id: str | None = revert_kwargs[CONF_DEVICE_ID]
-                if original_device_id is not None:
-                    device_registry = dr.async_get(self._hass)
-                    if device_registry.async_get(original_device_id) is None:
-                        _LOGGER.warning(
-                            "Original device %s for entity %s no longer exists, "
-                            "skipping device_id restore",
-                            original_device_id,
-                            self._entry_id,
-                        )
-                        revert_kwargs.pop(CONF_DEVICE_ID, None)
-
-            if revert_kwargs:
-                _LOGGER.debug(
-                    "Reverting entity %s to original data: %s",
-                    self._entry_id,
-                    revert_kwargs,
-                )
-                entity_registry.async_update_entity(entity.entity_id, **revert_kwargs)
-        finally:
-            await self.async_start_listening()
-
-    async def async_start_listening(self) -> None:
-        """Register single entity registry listener."""
-        if self._unsub_listener is not None:
-            return
-        self._unsub_listener = self._hass.bus.async_listen(
-            er.EVENT_ENTITY_REGISTRY_UPDATED,
-            self._async_on_entity_registry_updated,
-        )
-
-    async def _async_on_entity_registry_updated(
-        self,
-        event: Event[er.EventEntityRegistryUpdatedData],
-    ) -> None:
-        """Handle entity registry updated event."""
-        if event.data["action"] != "update":
-            return
-        if event.data["entity_id"] != self._entry_id:
-            return
-
+    def _get_current_data(self) -> dict[str, Any] | None:
+        """Return the current attribute values of the entity."""
         entity_registry = er.async_get(self._hass)
-        entity = entity_registry.async_get(self._entry_id)
-        if entity is None:
-            return
+        if (entity := entity_registry.async_get(self._entry_id)) is None:
+            return None
+        return {
+            key: _encode(key, getattr(entity, key))
+            for key in MODIFIABLE_ATTRIBUTES[ModificationType.ENTITY]
+        }
 
-        active_entries = self._get_active_entries()
-
-        changes: dict[str, Any] = event.data.get("changes", {})
-        new_data = entity.extended_dict
-        external_changes = {key: new_data[key] for key in changes if key in new_data}
-
-        if external_changes:
-            await self._store.async_update_entity(self._entry_id, external_changes)
-
-        # Re-apply so controlled keys remain correct
-        await self.async_apply(active_entries)
+    def _update(self, changes: dict[str, Any]) -> None:
+        """Write attribute values to the entity registry."""
+        er.async_get(self._hass).async_update_entity(
+            self._entry_id,
+            **{key: _decode(key, value) for key, value in changes.items()},
+        )
 
 
 class DeviceHandler(EntryHandler):
-    """Handler for a single device targeted by one or more config entries."""
+    """Handler for a single device targeted by one or more modifications."""
 
-    def _get_original_data(self) -> dict[str, Any]:
-        """Return original data from store."""
-        data = self._store.get_device(self._entry_id)
-        if data is None:
-            raise ValueError(
-                f"Original data for device {self._entry_id} not found in store"
-            )
-        return data
+    kind = KIND_DEVICES
+    modification_type = ModificationType.DEVICE
 
-    @staticmethod
-    def _prepare_device_kwargs(data: dict[str, Any]) -> dict[str, Any]:
-        """Convert modification data into kwargs suitable for async_update_device.
+    def _get_current_data(self) -> dict[str, Any] | None:
+        """Return the current attribute values of the device."""
+        device = async_get_device(self._hass, self._entry_id)
+        if not isinstance(device, dr.DeviceEntry):
+            return None
+        return {
+            key: _encode(key, getattr(device, key))
+            for key in MODIFIABLE_ATTRIBUTES[ModificationType.DEVICE]
+        }
 
-        Handles:
-        - entry_type: "" or "service" string (from user input) or DeviceEntryType/None
-          (from original data) → DeviceEntryType enum or None
-        - connections/identifiers: stored as lists-of-lists or sets-of-tuples →
-          new_connections / new_identifiers as set[tuple[str, str]]
-        """
-        result = dict(data)
-
-        if CONF_ENTRY_TYPE in result:
-            raw = result.pop(CONF_ENTRY_TYPE)
-            if isinstance(raw, dr.DeviceEntryType):
-                result[CONF_ENTRY_TYPE] = raw
-            else:
-                result[CONF_ENTRY_TYPE] = (
-                    dr.DeviceEntryType(raw) if raw and raw != "none" else None
-                )
-
-        def _normalize_pair_set(
-            raw_value: Any, field_name: str
-        ) -> set[tuple[str, str]]:
-            """Normalize a raw iterable of pairs into a set of (str, str) tuples.
-
-            Invalid entries (non-iterables, wrong length) are ignored with a warning.
-            """
-            normalized: set[tuple[str, str]] = set()
-            if not raw_value:
-                return normalized
-            for index, item in enumerate(raw_value):
-                if not isinstance(item, (list, tuple)) or len(item) != 2:
-                    _LOGGER.warning(
-                        "Ignoring invalid %s entry at index %s: %r",
-                        field_name,
-                        index,
-                        item,
-                    )
-                    continue
-                first, second = item
-                normalized.add((str(first), str(second)))
-            return normalized
-
-        if CONF_CONNECTIONS in result:
-            raw = result.pop(CONF_CONNECTIONS)
-            result["new_connections"] = _normalize_pair_set(raw, CONF_CONNECTIONS)
-
-        if CONF_IDENTIFIERS in result:
-            raw = result.pop(CONF_IDENTIFIERS)
-            result["new_identifiers"] = _normalize_pair_set(raw, CONF_IDENTIFIERS)
-
-        return result
-
-    async def async_apply(self, config_entries: list[ConfigEntry[Any]]) -> None:
-        """Apply all relevant config entries in priority order.
-
-        Priority: MERGE first, then DEVICE.
-        """
-        await self.async_stop_listening()
-        try:
-            device_registry = dr.async_get(self._hass)
-            device = device_registry.async_get(self._entry_id)
-            if device is None:
-                _LOGGER.warning("Device %s not found, cannot apply", self._entry_id)
-                return
-
-            for entry in config_entries:
-                device_registry.async_update_device(
-                    self._entry_id,
-                    add_config_entry_id=entry.entry_id,
-                )
-
-            merged: dict[str, Any] = {
-                k: v
-                for entry in config_entries
-                if ModificationType(entry.data[CONF_MODIFICATION_TYPE])
-                == ModificationType.DEVICE
-                for k, v in entry.options.get(CONF_MODIFICATION_DATA, {}).items()
-                if k in MODIFIABLE_ATTRIBUTES[ModificationType.DEVICE]
-            }
-
-            if merged:
-                _LOGGER.debug(
-                    "Applying device modifications to %s: %s",
-                    self._entry_id,
-                    merged,
-                )
-                device_registry.async_update_device(
-                    self._entry_id, **self._prepare_device_kwargs(merged)
-                )
-        finally:
-            await self.async_start_listening()
-
-    async def async_revert(self) -> None:
-        """Revert to original_data."""
-        await self.async_stop_listening()
-        try:
-            device_registry = dr.async_get(self._hass)
-            device = device_registry.async_get(self._entry_id)
-            if device is None:
-                _LOGGER.warning("Device %s not found, cannot revert", self._entry_id)
-                return
-
-            try:
-                original = self._get_original_data()
-            except ValueError:
-                _LOGGER.warning(
-                    "No original data for device %s, skipping attribute revert",
-                    self._entry_id,
-                )
-                original = {}
-
-            revert_kwargs: dict[str, Any] = {
-                k: v
-                for k, v in original.items()
-                if k in MODIFIABLE_ATTRIBUTES[ModificationType.DEVICE]
-            }
-            if revert_kwargs:
-                _LOGGER.debug(
-                    "Reverting device %s to original data: %s",
-                    self._entry_id,
-                    revert_kwargs,
-                )
-                device_registry.async_update_device(
-                    self._entry_id, **self._prepare_device_kwargs(revert_kwargs)
-                )
-
-            # Remove each DT config entry from the device.
-            # Guard against removing the last config entry — that would delete the device.
-            for entry in self._get_active_entries():
-                current = device_registry.async_get(self._entry_id)
-                if current is None or len(current.config_entries) <= 1:
-                    break
-                device_registry.async_update_device(
-                    self._entry_id,
-                    remove_config_entry_id=entry.entry_id,
-                )
-        finally:
-            await self.async_start_listening()
-
-    async def async_start_listening(self) -> None:
-        """Register single device registry listener."""
-        if self._unsub_listener is not None:
-            return
-        self._unsub_listener = self._hass.bus.async_listen(
-            dr.EVENT_DEVICE_REGISTRY_UPDATED,
-            self._async_on_device_registry_updated,
+    def _update(self, changes: dict[str, Any]) -> None:
+        """Write attribute values to the device registry."""
+        dr.async_get(self._hass).async_update_device(
+            self._entry_id,
+            **{key: _decode(key, value) for key, value in changes.items()},
         )
 
-    async def _async_on_device_registry_updated(
-        self,
-        event: Event[dr.EventDeviceRegistryUpdatedData],
-    ) -> None:
-        """Handle device registry updated event."""
-        if event.data["action"] != "update":
-            return
-        if event.data["device_id"] != self._entry_id:
-            return
 
-        device_registry = dr.async_get(self._hass)
-        device = device_registry.async_get(self._entry_id)
-        if device is None:
-            return
+def _encode(key: str, value: Any) -> Any:
+    """Return the JSON representation of a registry attribute value."""
+    if key in (CONF_ENTITY_CATEGORY, CONF_ENTRY_TYPE) and value is not None:
+        return str(value)
+    return value
 
-        active_entries = self._get_active_entries()
 
-        changes: dict[str, Any] = event.data.get("changes", {})
-        new_data = device.dict_repr
-        external_changes = {key: new_data[key] for key in changes if key in new_data}
-
-        if external_changes:
-            await self._store.async_update_device(self._entry_id, external_changes)
-
-        await self.async_apply(active_entries)
+def _decode(key: str, value: Any) -> Any:
+    """Return the registry representation of a JSON attribute value."""
+    if value is None:
+        return None
+    if key == CONF_ENTITY_CATEGORY:
+        return EntityCategory(value)
+    if key == CONF_ENTRY_TYPE:
+        return dr.DeviceEntryType(value)
+    return value

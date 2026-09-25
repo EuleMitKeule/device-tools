@@ -16,6 +16,7 @@ CONF_MODIFICATION_IS_CUSTOM_ENTRY = "modification_is_custom_entry"
 CONF_MODIFICATION_ENTRY_NAME = "modification_entry_name"
 CONF_MODIFICATION_DATA = "modification_data"
 CONF_MODIFICATION_ORIGINAL_DATA = "modification_original_data"
+
 CONF_MANUFACTURER = "manufacturer"
 CONF_MODEL = "model"
 CONF_MODEL_ID = "model_id"
@@ -30,13 +31,18 @@ CONF_IDENTIFIERS = "identifiers"
 
 CONF_DEVICE_ID = "device_id"
 CONF_ENTITY_CATEGORY = "entity_category"
-ENTITY_CATEGORY_OPTIONS = ["default", "config", "diagnostic"]
 
 CONF_ASSIGNED_ENTITIES = "assigned_entities"
 
 CONF_MERGE_DEVICE_IDS = "merge_device_ids"
 CONF_ENTITIES = "entities"
-CONF_ORIGINAL_DATA = "original_data"
+
+ENTITY_CATEGORY_DEFAULT = "default"
+ENTITY_CATEGORY_OPTIONS = [ENTITY_CATEGORY_DEFAULT, "config", "diagnostic"]
+ENTRY_TYPE_NONE = "none"
+ENTRY_TYPE_OPTIONS = [ENTRY_TYPE_NONE, "service"]
+
+CONFIGURATION_URL_SCHEMES = {"http", "https", "homeassistant"}
 
 
 class ModificationType(StrEnum):
@@ -62,14 +68,7 @@ MODIFIABLE_ATTRIBUTES = {
         CONF_SERIAL_NUMBER,
         CONF_VIA_DEVICE_ID,
         CONF_CONFIGURATION_URL,
-        # NOTE: CONF_ENTRY_TYPE, CONF_CONNECTIONS, and CONF_IDENTIFIERS use
-        # non-JSON-serializable native HA types (DeviceEntryType, set/frozenset
-        # of tuples). They are normalized to JSON-safe forms by
-        # _normalize_device_value() in config_flow.py before being stored in
-        # config entry data.
         CONF_ENTRY_TYPE,
-        CONF_CONNECTIONS,
-        CONF_IDENTIFIERS,
     ],
     ModificationType.ENTITY: [
         CONF_DEVICE_ID,
@@ -78,10 +77,9 @@ MODIFIABLE_ATTRIBUTES = {
     ModificationType.MERGE: [],
 }
 
-IGNORED_ATTRIBUTES = [
-    "config_entries",
-    "created_at",
-    "id",
-    "modified_at",
-    "primary_config_entry",
-]
+# Modifications are applied in ascending order, later ones take precedence.
+MODIFICATION_PRECEDENCE = {
+    ModificationType.DEVICE: 0,
+    ModificationType.MERGE: 1,
+    ModificationType.ENTITY: 2,
+}
