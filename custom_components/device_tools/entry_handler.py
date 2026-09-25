@@ -57,11 +57,6 @@ class EntryHandler(ABC):
         """Return the original values of all controlled attributes."""
         return self._store.get(self.kind, self._entry_id)
 
-    @property
-    def current_data(self) -> dict[str, Any]:
-        """Return the current attribute values of the registry entry."""
-        return self._get_current_data() or {}
-
     @abstractmethod
     def _get_current_data(self) -> dict[str, Any] | None:
         """Return the current attribute values or None if the entry does not exist."""
@@ -167,13 +162,7 @@ class EntityHandler(EntryHandler):
 
     def _get_current_data(self) -> dict[str, Any] | None:
         """Return the current attribute values of the entity."""
-        entity_registry = er.async_get(self._hass)
-        if (entity := entity_registry.async_get(self._entry_id)) is None:
-            return None
-        return {
-            key: _encode(key, getattr(entity, key))
-            for key in MODIFIABLE_ATTRIBUTES[ModificationType.ENTITY]
-        }
+        return get_entity_data(self._hass, self._entry_id)
 
     def _update(self, changes: dict[str, Any]) -> None:
         """Write attribute values to the entity registry."""
@@ -191,13 +180,7 @@ class DeviceHandler(EntryHandler):
 
     def _get_current_data(self) -> dict[str, Any] | None:
         """Return the current attribute values of the device."""
-        device = async_get_device(self._hass, self._entry_id)
-        if not isinstance(device, dr.DeviceEntry):
-            return None
-        return {
-            key: _encode(key, getattr(device, key))
-            for key in MODIFIABLE_ATTRIBUTES[ModificationType.DEVICE]
-        }
+        return get_device_data(self._hass, self._entry_id)
 
     def _update(self, changes: dict[str, Any]) -> None:
         """Write attribute values to the device registry."""
@@ -205,6 +188,27 @@ class DeviceHandler(EntryHandler):
             self._entry_id,
             **{key: _decode(key, value) for key, value in changes.items()},
         )
+
+
+def get_entity_data(hass: HomeAssistant, entity_id: str) -> dict[str, Any] | None:
+    """Return the modifiable attribute values of an entity."""
+    if (entity := er.async_get(hass).async_get(entity_id)) is None:
+        return None
+    return {
+        key: _encode(key, getattr(entity, key))
+        for key in MODIFIABLE_ATTRIBUTES[ModificationType.ENTITY]
+    }
+
+
+def get_device_data(hass: HomeAssistant, device_id: str) -> dict[str, Any] | None:
+    """Return the modifiable attribute values of a device."""
+    device = async_get_device(hass, device_id)
+    if not isinstance(device, dr.DeviceEntry):
+        return None
+    return {
+        key: _encode(key, getattr(device, key))
+        for key in MODIFIABLE_ATTRIBUTES[ModificationType.DEVICE]
+    }
 
 
 def _encode(key: str, value: Any) -> Any:

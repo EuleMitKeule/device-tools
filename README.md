@@ -97,7 +97,7 @@ Device Tools 1.x did not persist original values. Until an integration updates i
 
 ### Home Assistant 2026.8
 
-Home Assistant 2026.8 changed devices to belong to a single integration. Previous versions of Device Tools added themselves to the devices they modified, so Home Assistant split these devices into separate devices. Device Tools cleans up after this automatically: modifications are moved to the device of the original integration and the leftover empty duplicates owned by Device Tools are removed.
+Home Assistant 2026.8 changed devices to belong to a single integration. Previous versions of Device Tools added themselves to the devices they modified, so Home Assistant split these devices into separate devices. Device Tools cleans up after this automatically: modifications are moved to the device of the original integration, entities of merged devices that Home Assistant moved to one of the duplicates are merged again, and the leftover empty duplicates owned by Device Tools are removed.
 
 ## Troubleshooting
 

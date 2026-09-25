@@ -32,7 +32,13 @@ from .const import (
     MODIFICATION_PRECEDENCE,
     ModificationType,
 )
-from .entry_handler import DeviceHandler, EntityHandler, EntryHandler
+from .entry_handler import (
+    DeviceHandler,
+    EntityHandler,
+    EntryHandler,
+    get_device_data,
+    get_entity_data,
+)
 from .original_data_store import KIND_DEVICES, KIND_ENTITIES, OriginalDataStore
 from .utils import (
     assigned_entities,
@@ -275,14 +281,14 @@ class ModificationEngine:
     def get_original_entity_data(self, entity_id: str) -> dict[str, Any]:
         """Return the attribute values an entity would have without modifications."""
         return {
-            **EntityHandler(self._hass, entity_id, self._store).current_data,
+            **(get_entity_data(self._hass, entity_id) or {}),
             **self._store.get(KIND_ENTITIES, entity_id),
         }
 
     def get_original_device_data(self, device_id: str) -> dict[str, Any]:
         """Return the attribute values a device would have without modifications."""
         return {
-            **DeviceHandler(self._hass, device_id, self._store).current_data,
+            **(get_device_data(self._hass, device_id) or {}),
             **self._store.get(KIND_DEVICES, device_id),
         }
 
@@ -509,7 +515,9 @@ class ModificationEngine:
                     **device_data.get(CONF_ENTITIES, {}),
                     **{
                         entity_id: {}
-                        for entity_id in self._get_entities_of_device(device_id)
+                        for entity_id in self._get_merge_candidates(
+                            modification_entry_id(config_entry), device_id
+                        )
                         if entity_id not in device_data.get(CONF_ENTITIES, {})
                     },
                 },
@@ -526,10 +534,16 @@ class ModificationEngine:
             data={**config_entry.data, CONF_MODIFICATION_ORIGINAL_DATA: new_sources},
         )
 
-    def _get_entities_of_device(self, device_id: str) -> list[str]:
-        """Return the entities of a device, including ones moved away by modifications."""
+    def _get_merge_candidates(self, target_id: str, device_id: str) -> list[str]:
+        """Return the entities a merge takes from a merged device.
+
+        These are the entities of the device, including ones moved away by
+        modifications. Previous versions added the config entries of merged devices
+        to the target device, so Home Assistant 2026.8 split the target device and
+        moved the merged entities to one of the splits. Those are included as well.
+        """
         entity_registry = er.async_get(self._hass)
-        return [
+        candidates = [
             entity.entity_id
             for entity in er.async_entries_for_device(
                 entity_registry, device_id, include_disabled_entities=True
@@ -540,6 +554,29 @@ class ModificationEngine:
             if self._store.get(KIND_ENTITIES, entity_id).get(CONF_DEVICE_ID)
             == device_id
         ]
+
+        device_registry = dr.async_get(self._hass)
+        target = async_get_device(self._hass, target_id)
+        device = async_get_device(self._hass, device_id)
+        if (
+            not isinstance(target, dr.DeviceEntry)
+            or not isinstance(device, dr.DeviceEntry)
+            or target.composite_device_id is None
+        ):
+            return candidates
+        for split in device_registry.async_get_devices_for_composite_device_id(
+            target.composite_device_id
+        ):
+            if split.id == target_id or split.config_entry_id != device.config_entry_id:
+                continue
+            candidates.extend(
+                entity.entity_id
+                for entity in er.async_entries_for_device(
+                    entity_registry, split.id, include_disabled_entities=True
+                )
+                if entity.config_entry_id == device.config_entry_id
+            )
+        return candidates
 
     @callback
     def _async_discover_merge_entity(self, entity_id: str) -> None:

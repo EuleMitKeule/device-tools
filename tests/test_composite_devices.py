@@ -231,3 +231,93 @@ async def test_split_custom_device(
         CONF_DEVICE_ID: custom_device_id
     }
     assert er.async_get(hass).async_get("sensor.moved").device_id == custom_device_id
+
+
+async def test_split_device_of_v1_modification(
+    hass: HomeAssistant, hass_storage: dict[str, Any]
+) -> None:
+    source_entry = MockConfigEntry(domain=SOURCE_DOMAIN)
+    source_entry.add_to_hass(hass)
+    modified_entry = MockConfigEntry(
+        domain=DOMAIN,
+        version=1,
+        title="Modified",
+        data={
+            "device_modification": {
+                "modification_name": "Modified",
+                "device_id": "composite",
+                "device_name": "composite",
+                "attribute_modification": {"manufacturer": "Changed"},
+                "entity_modification": {"entities": ["sensor.moved"]},
+                "merge_modification": None,
+            }
+        },
+    )
+    modified_entry.add_to_hass(hass)
+    custom_entry = MockConfigEntry(
+        domain=DOMAIN,
+        version=1,
+        title="Custom",
+        data={
+            "device_modification": {
+                "modification_name": "Custom",
+                "device_id": "custom",
+                "device_name": "Virtual",
+                "attribute_modification": None,
+                "entity_modification": None,
+                "merge_modification": {"devices": ["merged"]},
+            }
+        },
+    )
+    custom_entry.add_to_hass(hass)
+    await _load_registries(
+        hass,
+        hass_storage,
+        [
+            _device(
+                "composite",
+                [source_entry.entry_id, modified_entry.entry_id],
+                [[SOURCE_DOMAIN, "a"]],
+            ),
+            _device(
+                "custom",
+                [custom_entry.entry_id, source_entry.entry_id],
+                [[DOMAIN, custom_entry.entry_id]],
+            ),
+            _device("merged", [source_entry.entry_id], [[SOURCE_DOMAIN, "m"]]),
+        ],
+        [
+            _entity("sensor.moved", source_entry.entry_id, "composite"),
+            _entity("sensor.merged", source_entry.entry_id, "custom"),
+        ],
+    )
+    device_registry = dr.async_get(hass)
+    splits = {
+        composite_id: {
+            device.config_entry_id: device.id
+            for device in device_registry.async_get_devices_for_composite_device_id(
+                composite_id
+            )
+        }
+        for composite_id in ("composite", "custom")
+    }
+
+    assert await async_setup_component(hass, DOMAIN, {})
+    await hass.async_block_till_done()
+
+    device_id = splits["composite"][source_entry.entry_id]
+    custom_device_id = splits["custom"][custom_entry.entry_id]
+    assert modified_entry.data[CONF_MODIFICATION_ENTRY_ID] == device_id
+    assert device_registry.async_get(device_id).manufacturer == "Changed"
+    assert custom_entry.data[CONF_MODIFICATION_ENTRY_ID] == custom_device_id
+    assert device_registry.async_get(custom_device_id).name == "Virtual"
+    assert not dr.async_entries_for_config_entry(
+        device_registry, modified_entry.entry_id
+    )
+    merge_entry = hass.config_entries.async_entry_for_domain_unique_id(
+        DOMAIN, f"merge_{custom_device_id}"
+    )
+    assert merge_entry is not None
+    entity_registry = er.async_get(hass)
+    assert entity_registry.async_get("sensor.moved").device_id == device_id
+    assert entity_registry.async_get("sensor.merged").device_id == custom_device_id

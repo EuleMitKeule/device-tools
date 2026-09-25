@@ -52,6 +52,7 @@ from .const import (
     ModificationType,
 )
 from .data import DATA_KEY
+from .entry_handler import get_device_data, get_entity_data
 from .migration import MINOR_VERSION, VERSION
 from .utils import (
     async_get_device,
@@ -372,12 +373,16 @@ def _original_data(
     """Return the values the modified entity or device has without modifications."""
     if modification_entry_id is None:
         return {}
-    engine = hass.data[DATA_KEY].engine
+    engine = data.engine if (data := hass.data.get(DATA_KEY)) is not None else None
     match mod_type:
-        case ModificationType.DEVICE:
+        case ModificationType.DEVICE if engine is not None:
             return engine.get_original_device_data(modification_entry_id)
-        case ModificationType.ENTITY:
+        case ModificationType.DEVICE:
+            return get_device_data(hass, modification_entry_id) or {}
+        case ModificationType.ENTITY if engine is not None:
             return engine.get_original_entity_data(modification_entry_id)
+        case ModificationType.ENTITY:
+            return get_entity_data(hass, modification_entry_id) or {}
         case ModificationType.MERGE:
             return {}
 

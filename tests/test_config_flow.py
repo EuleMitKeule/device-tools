@@ -403,3 +403,26 @@ async def test_device_already_merged(
         flow_id, {CONF_MERGE_OPTIONS: {CONF_MERGE_DEVICE_IDS: [merged_device.id]}}
     )
     assert result["errors"] == {"base": "device_already_merged"}
+
+
+async def test_flow_before_setup(
+    hass: HomeAssistant, source_entry: MockConfigEntry
+) -> None:
+    device = create_device(hass, source_entry, "a", manufacturer="Acme")
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": config_entries.SOURCE_USER}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"next_step_id": "device"}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_MODIFICATION_ENTRY_ID: device.id}
+    )
+    assert result["step_id"] == "modify_device"
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {CONF_DEVICE_ATTRIBUTES: {CONF_MANUFACTURER: "Changed"}},
+    )
+    await hass.async_block_till_done()
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert dr.async_get(hass).async_get(device.id).manufacturer == "Changed"

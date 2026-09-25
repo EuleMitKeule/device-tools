@@ -98,9 +98,7 @@ async def _async_migrate_v1(
         return False
 
     device_name: str = device_modification.get("device_name") or config_entry.title
-    device_id = async_resolve_device_id(
-        hass, device_modification.get("device_id"), config_entry.entry_id
-    )
+    device_id = async_resolve_device_id(hass, device_modification.get("device_id"))
     device = async_get_device(hass, device_id) if device_id is not None else None
     is_custom_entry = (
         device is None or (DOMAIN, config_entry.entry_id) in device.identifiers

@@ -8,7 +8,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
 from .data import DATA_KEY
-from .entry_handler import DeviceHandler, EntityHandler
+from .entry_handler import get_device_data, get_entity_data
 from .original_data_store import KIND_DEVICES, KIND_ENTITIES
 
 
@@ -27,7 +27,7 @@ async def async_get_config_entry_diagnostics(
         "loaded": config_entry in engine.get_config_entries(),
         "entities": {
             entity_id: {
-                "current": EntityHandler(hass, entity_id, store).current_data,
+                "current": get_entity_data(hass, entity_id),
                 "desired": engine.get_desired_entity_data(entity_id),
                 "original": store.get(KIND_ENTITIES, entity_id),
             }
@@ -35,7 +35,7 @@ async def async_get_config_entry_diagnostics(
         },
         "devices": {
             device_id: {
-                "current": DeviceHandler(hass, device_id, store).current_data,
+                "current": get_device_data(hass, device_id),
                 "desired": engine.get_desired_device_data(device_id),
                 "original": store.get(KIND_DEVICES, device_id),
             }
