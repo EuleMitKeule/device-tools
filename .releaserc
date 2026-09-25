@@ -8,8 +8,9 @@
     },
     "master",
     {
-      "name": "beta",
-      "prerelease": true
+      "name": "dev-2.x",
+      "prerelease": "beta",
+      "channel": "beta"
     }
   ],
   "plugins": [

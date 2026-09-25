@@ -6,7 +6,6 @@ on:
   push:
     branches:
       - master
-      - beta
       - dev-2.x
 
 concurrency:
