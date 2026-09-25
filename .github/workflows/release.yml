@@ -9,16 +9,18 @@ jobs:
     concurrency: release
     permissions:
       contents: write
+      issues: write
+      pull-requests: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
           persist-credentials: false
 
       - name: Semantic Release
         id: semantic
-        uses: cycjimmy/semantic-release-action@v3
+        uses: cycjimmy/semantic-release-action@v4
         env:
           GITHUB_TOKEN: ${{ secrets.PAT }}
 
@@ -27,12 +29,14 @@ jobs:
         run: |
           sed -i 's/"version": "0.0.0-dev"/"version": "${{ steps.semantic.outputs.new_release_version }}"/' \
             custom_components/device_tools/manifest.json
+          grep -q '"version": "${{ steps.semantic.outputs.new_release_version }}"' \
+            custom_components/device_tools/manifest.json
 
       - name: Create zip
         if: steps.semantic.outputs.new_release_published == 'true'
         run: |
           cd custom_components/device_tools
-          zip -r ../../device_tools.zip .
+          zip -r ../../device_tools.zip . -x '__pycache__/*' '*.pyc'
 
       - name: Upload zip to release
         if: steps.semantic.outputs.new_release_published == 'true'

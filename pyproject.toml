@@ -13,34 +13,28 @@ keywords = [
     "home-assistant",
     "home-assistant-custom-component",
     "home-assistant-integration",
-    "home-assistant-integration",
 ]
 classifiers = [
-    "Development Status :: 3 - Alpha",
-    "Intended Audience :: Users",
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: End Users/Desktop",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
 ]
 description = "A custom component for Home Assistant to create and modify devices."
 readme = "README.md"
-requires-python = ">=3.13.2"
-version = "2.0.1"
-dependencies = [
-    "pycares==4.9.0",
-]
+requires-python = ">=3.14.2"
+version = "0.0.0"
 
 [dependency-groups]
 dev = [
     "ruff",
-    "mypy",
-    "homeassistant-stubs",
-    "voluptuous-stubs",
-    "homeassistant>=2025.12.0",
+    "ty",
+    "homeassistant==2026.9.3",
 ]
 test = [
-    "pytest",
-    "pytest-asyncio",
+    "pytest-homeassistant-custom-component==0.13.366",
     "pytest-cov",
 ]
 
@@ -50,19 +44,79 @@ Documentation = "https://github.com/eulemitkeule/device-tools/blob/master/README
 Changelog = "https://github.com/EuleMitKeule/device-tools/releases"
 Issues = "https://github.com/eulemitkeule/device-tools/issues"
 
-[tool.mypy]
-check_untyped_defs = true
-strict = true
+[tool.uv]
+package = false
+
+[tool.ty.environment]
+python-version = "3.14"
+
+[tool.ty.src]
+include = ["custom_components"]
+
+[tool.ty.rules]
+possibly-unresolved-reference = "error"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+
+[tool.coverage.run]
+source = ["custom_components/device_tools"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+
+[tool.ruff]
+target-version = "py313"
 
 [tool.ruff.lint]
-select = ["D", "ARG"]
+select = [
+    "A",
+    "ARG",
+    "ASYNC",
+    "B",
+    "C4",
+    "D",
+    "E",
+    "F",
+    "FLY",
+    "I",
+    "LOG",
+    "PERF",
+    "PIE",
+    "PL",
+    "PT",
+    "RET",
+    "RUF",
+    "SIM",
+    "T20",
+    "TC",
+    "UP",
+    "W",
+]
+ignore = [
+    "E501",
+    "PLR0911",
+    "PLR0912",
+    "PLR0913",
+    "PLR0915",
+    "PLR2004",
+    "TC001",
+    "TC002",
+    "TC003",
+]
+
+[tool.ruff.lint.isort]
+combine-as-imports = true
+force-sort-within-sections = true
+known-first-party = ["custom_components", "tests"]
+known-third-party = ["homeassistant"]
+split-on-trailing-comma = false
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
 
 [tool.ruff.lint.per-file-ignores]
-"!custom_components/device_tools/**.py" = ["D", "ARG"]
+"tests/**.py" = ["D", "ARG", "PLC0415"]
