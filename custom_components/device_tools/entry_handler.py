@@ -83,15 +83,11 @@ class EntryHandler(ABC):
             return
 
         original_data = self.original_data
-        changes: dict[str, Any] = {}
-
-        if release:
-            for key, original_value in original_data.items():
-                if key in desired_data:
-                    continue
-                if current_data.get(key) != original_value:
-                    changes[key] = original_value
-                self._store.async_remove(self.kind, self._entry_id, key)
+        changes = (
+            self._async_release(desired_data, current_data, original_data)
+            if release
+            else {}
+        )
 
         for key, value in desired_data.items():
             if key not in original_data:
@@ -104,6 +100,23 @@ class EntryHandler(ABC):
         if changes:
             _LOGGER.debug("Updating %s %s: %s", self.kind, self._entry_id, changes)
             self._async_update(changes)
+
+    @callback
+    def _async_release(
+        self,
+        desired_data: dict[str, Any],
+        current_data: dict[str, Any],
+        original_data: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Forget attributes that are no longer desired and return their original values."""
+        changes: dict[str, Any] = {}
+        for key, original_value in original_data.items():
+            if key in desired_data:
+                continue
+            if current_data.get(key) != original_value:
+                changes[key] = original_value
+            self._store.async_remove(self.kind, self._entry_id, key)
+        return changes
 
     @callback
     def async_on_registry_updated(

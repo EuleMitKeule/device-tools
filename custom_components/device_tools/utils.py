@@ -118,22 +118,17 @@ def async_resolve_device_id(
     ):
         return None
 
-    def is_device_tools_entry(config_entry_id: str) -> bool:
-        config_entry = hass.config_entries.async_get_entry(config_entry_id)
-        return config_entry is not None and config_entry.domain == DOMAIN
-
-    for split in splits:
+    def priority(split: dr.DeviceEntry) -> int:
+        """Return how well a split device matches, lower is better."""
         if split.config_entry_id == owner_config_entry_id:
-            return split.id
-    for split in splits:
+            return 0
         if (DOMAIN, split.config_entry_id) in split.identifiers:
-            return split.id
-    for split in splits:
-        if split.config_entry_id == split.composite_primary_config_entry and not (
-            is_device_tools_entry(split.config_entry_id)
-        ):
-            return split.id
-    for split in splits:
-        if not is_device_tools_entry(split.config_entry_id):
-            return split.id
-    return splits[0].id
+            return 1
+        config_entry = hass.config_entries.async_get_entry(split.config_entry_id)
+        if config_entry is not None and config_entry.domain == DOMAIN:
+            return 4
+        if split.config_entry_id == split.composite_primary_config_entry:
+            return 2
+        return 3
+
+    return min(splits, key=priority).id

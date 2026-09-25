@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 import logging
 from typing import Any
 
@@ -193,7 +193,7 @@ class ModificationEngine:
     @callback
     def _async_remove_device_references(self, device_id: str) -> None:
         """Remove references to a device that was removed with its modification."""
-        for config_entry in list(self._config_entries.values()):
+        for config_entry in self._config_entries.values():
             data = dict(config_entry.data)
             options = modification_data(config_entry)
             match modification_type(config_entry):
@@ -432,7 +432,7 @@ class ModificationEngine:
         self._entity_handlers.pop(entity_id, None)
         self._store.async_remove(KIND_ENTITIES, entity_id)
 
-        for config_entry in list(self._config_entries.values()):
+        for config_entry in self._config_entries.values():
             if modification_type(config_entry) != ModificationType.MERGE:
                 continue
             sources = config_entry.data.get(CONF_MODIFICATION_ORIGINAL_DATA, {})
@@ -469,7 +469,7 @@ class ModificationEngine:
         self._device_handlers.pop(device_id, None)
         self._store.async_remove(KIND_DEVICES, device_id)
 
-        for config_entry in list(self._config_entries.values()):
+        for config_entry in self._config_entries.values():
             if modification_type(config_entry) != ModificationType.MERGE:
                 continue
             sources = dict(config_entry.data.get(CONF_MODIFICATION_ORIGINAL_DATA, {}))
@@ -492,7 +492,7 @@ class ModificationEngine:
         self, *, entity_id: str | None = None, device_id: str | None = None
     ) -> None:
         """Re-apply modifications referencing an entity or device that appeared or vanished."""
-        for config_entry in list(self._config_entries.values()):
+        for config_entry in self._config_entries.values():
             if not _references(config_entry, entity_id=entity_id, device_id=device_id):
                 continue
             self._async_reconcile_targets(
@@ -586,7 +586,7 @@ class ModificationEngine:
             entity := entity_registry.async_get(entity_id)
         ) is None or entity.device_id is None:
             return
-        for config_entry in list(self._config_entries.values()):
+        for config_entry in self._config_entries.values():
             if modification_type(config_entry) != ModificationType.MERGE:
                 continue
             sources = merge_sources(config_entry)
@@ -670,17 +670,11 @@ def async_resolve_references(
         if (device_id := options.get(key)) is not None:
             options[key] = resolve(device_id)
     if modification_type(config_entry) == ModificationType.MERGE:
-        sources: dict[str, Any] = {}
-        for device_id, device_data in data.get(
-            CONF_MODIFICATION_ORIGINAL_DATA, {}
-        ).items():
-            resolved = resolve(device_id)
-            if resolved == data[CONF_MODIFICATION_ENTRY_ID]:
-                continue
-            sources.setdefault(resolved, {CONF_ENTITIES: {}})[CONF_ENTITIES].update(
-                device_data.get(CONF_ENTITIES, {})
-            )
-        data[CONF_MODIFICATION_ORIGINAL_DATA] = sources
+        data[CONF_MODIFICATION_ORIGINAL_DATA] = _resolve_merge_sources(
+            data[CONF_MODIFICATION_ORIGINAL_DATA],
+            data[CONF_MODIFICATION_ENTRY_ID],
+            resolve,
+        )
 
     if data == dict(config_entry.data) and options == modification_data(config_entry):
         return None
@@ -689,6 +683,22 @@ def async_resolve_references(
         "options": {**config_entry.options, CONF_MODIFICATION_DATA: options},
         "unique_id": f"{modification_type(config_entry)}_{data[CONF_MODIFICATION_ENTRY_ID]}",
     }
+
+
+def _resolve_merge_sources(
+    sources: dict[str, Any],
+    target_id: str,
+    resolve: Callable[[str], str],
+) -> dict[str, Any]:
+    """Return merged devices with resolved device ids."""
+    resolved_sources: dict[str, Any] = {}
+    for device_id, device_data in sources.items():
+        if (resolved := resolve(device_id)) == target_id:
+            continue
+        resolved_sources.setdefault(resolved, {CONF_ENTITIES: {}})[
+            CONF_ENTITIES
+        ].update(device_data.get(CONF_ENTITIES, {}))
+    return resolved_sources
 
 
 def _filter_data(mod_type: ModificationType, data: dict[str, Any]) -> dict[str, Any]:

@@ -8,7 +8,7 @@ from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import device_registry as dr, entity_registry as er
 
 from .const import (
     CONF_ASSIGNED_ENTITIES,
@@ -31,7 +31,7 @@ from .const import (
     ModificationType,
 )
 from .data import DATA_KEY
-from .original_data_store import KIND_DEVICES, KIND_ENTITIES
+from .original_data_store import KIND_DEVICES, KIND_ENTITIES, OriginalDataStore
 from .utils import (
     async_get_device,
     async_resolve_device_id,
@@ -97,106 +97,155 @@ async def _async_migrate_v1(
         )
         return False
 
-    device_name: str = device_modification.get("device_name") or config_entry.title
-    device_id = async_resolve_device_id(hass, device_modification.get("device_id"))
-    device = async_get_device(hass, device_id) if device_id is not None else None
-    is_custom_entry = (
-        device is None or (DOMAIN, config_entry.entry_id) in device.identifiers
-    )
-    if device is None and device_modification.get("device_id") is not None:
-        _LOGGER.warning(
-            "Device %s of modification %s no longer exists, it will be recreated",
-            device_modification["device_id"],
-            config_entry.title,
+    device = _get_v1_device(hass, config_entry, device_modification)
+    modification_data = _get_v1_modification_data(hass, device_modification)
+    merge_device_ids = _get_v1_merge_device_ids(hass, device_modification, device)
+
+    if device is None or (DOMAIN, config_entry.entry_id) in device.identifiers:
+        _migrate_v1_device(
+            hass,
+            config_entry,
+            config_entry.entry_id if device is None else device.id,
+            device_modification.get("device_name") or config_entry.title,
+            modification_data,
+            is_custom_entry=True,
         )
-
-    modification_data: dict[str, Any] = {
-        key: value
-        for key in V1_ATTRIBUTES
-        if (value := (device_modification.get("attribute_modification") or {}).get(key))
-    }
-    if (via_device_id := modification_data.get(CONF_VIA_DEVICE_ID)) is not None:
-        if (resolved := async_resolve_device_id(hass, via_device_id)) is None:
-            del modification_data[CONF_VIA_DEVICE_ID]
-        else:
-            modification_data[CONF_VIA_DEVICE_ID] = resolved
-    if assigned_entities := _resolve_v1_entities(
-        hass,
-        (device_modification.get("entity_modification") or {}).get(CONF_ENTITIES, []),
-    ):
-        modification_data[CONF_ASSIGNED_ENTITIES] = assigned_entities
-
-    merge_device_ids = [
-        merge_device_id
-        for source_id in (device_modification.get("merge_modification") or {}).get(
-            "devices", []
+    elif modification_data or not merge_device_ids:
+        _migrate_v1_device(
+            hass,
+            config_entry,
+            device.id,
+            name_for_device(device),
+            modification_data,
+            is_custom_entry=False,
         )
-        if (merge_device_id := async_resolve_device_id(hass, source_id)) is not None
-        and merge_device_id != device_id
-    ]
-
-    if (
-        device is not None
-        and not is_custom_entry
-        and not modification_data
-        and merge_device_ids
-    ):
+    else:
         fields = _merge_entry_fields(
             device.id, name_for_device(device), merge_device_ids
         )
         del fields["title"]
         hass.config_entries.async_update_entry(
-            config_entry,
-            **fields,
-            version=VERSION,
-            minor_version=MINOR_VERSION,
+            config_entry, **fields, version=VERSION, minor_version=MINOR_VERSION
         )
         return True
 
-    target_id = (
-        config_entry.entry_id if device_id is None or device is None else device_id
+    if device is not None and merge_device_ids:
+        await _async_add_merge_entry(hass, config_entry, device, merge_device_ids)
+    return True
+
+
+def _get_v1_device(
+    hass: HomeAssistant,
+    config_entry: ConfigEntry[Any],
+    device_modification: dict[str, Any],
+) -> dr.AnyDeviceEntry | None:
+    """Return the device of a 1.x modification or None if it does not exist."""
+    if (device_id := device_modification.get("device_id")) is None:
+        return None
+    if (resolved := async_resolve_device_id(hass, device_id)) is not None and (
+        device := async_get_device(hass, resolved)
+    ) is not None:
+        return device
+    _LOGGER.warning(
+        "Device %s of modification %s no longer exists, it will be recreated",
+        device_id,
+        config_entry.title,
     )
+    return None
+
+
+def _get_v1_modification_data(
+    hass: HomeAssistant, device_modification: dict[str, Any]
+) -> dict[str, Any]:
+    """Return the modification data of the device of a 1.x modification."""
+    attribute_modification = device_modification.get("attribute_modification") or {}
+    modification_data: dict[str, Any] = {
+        key: value
+        for key in V1_ATTRIBUTES
+        if (value := attribute_modification.get(key))
+    }
+    if CONF_VIA_DEVICE_ID in modification_data:
+        via_device_id = async_resolve_device_id(
+            hass, modification_data.pop(CONF_VIA_DEVICE_ID)
+        )
+        if via_device_id is not None:
+            modification_data[CONF_VIA_DEVICE_ID] = via_device_id
+    entity_modification = device_modification.get("entity_modification") or {}
+    if assigned_entities := _resolve_v1_entities(
+        hass, entity_modification.get(CONF_ENTITIES, [])
+    ):
+        modification_data[CONF_ASSIGNED_ENTITIES] = assigned_entities
+    return modification_data
+
+
+def _get_v1_merge_device_ids(
+    hass: HomeAssistant,
+    device_modification: dict[str, Any],
+    device: dr.AnyDeviceEntry | None,
+) -> list[str]:
+    """Return the ids of the devices merged by a 1.x modification."""
+    merge_modification = device_modification.get("merge_modification") or {}
+    return [
+        merge_device_id
+        for device_id in merge_modification.get("devices", [])
+        if (merge_device_id := async_resolve_device_id(hass, device_id)) is not None
+        and (device is None or merge_device_id != device.id)
+    ]
+
+
+def _migrate_v1_device(
+    hass: HomeAssistant,
+    config_entry: ConfigEntry[Any],
+    device_id: str,
+    device_name: str,
+    modification_data: dict[str, Any],
+    *,
+    is_custom_entry: bool,
+) -> None:
+    """Turn a 1.x modification into a device modification."""
     hass.config_entries.async_update_entry(
         config_entry,
         data={
             CONF_MODIFICATION_TYPE: ModificationType.DEVICE,
-            CONF_MODIFICATION_ENTRY_ID: target_id,
-            CONF_MODIFICATION_ENTRY_NAME: device_name
-            if is_custom_entry or device is None
-            else name_for_device(device),
+            CONF_MODIFICATION_ENTRY_ID: device_id,
+            CONF_MODIFICATION_ENTRY_NAME: device_name,
             CONF_MODIFICATION_IS_CUSTOM_ENTRY: is_custom_entry,
             CONF_MODIFICATION_ORIGINAL_DATA: {},
         },
         options={CONF_MODIFICATION_DATA: modification_data},
-        unique_id=f"{ModificationType.DEVICE}_{target_id}",
+        unique_id=f"{ModificationType.DEVICE}_{device_id}",
         version=VERSION,
         minor_version=MINOR_VERSION,
     )
 
-    if merge_device_ids and device is not None:
-        fields = _merge_entry_fields(
-            device.id, name_for_device(device), merge_device_ids
+
+async def _async_add_merge_entry(
+    hass: HomeAssistant,
+    config_entry: ConfigEntry[Any],
+    device: dr.AnyDeviceEntry,
+    merge_device_ids: list[str],
+) -> None:
+    """Add a merge modification for the merges of a 1.x modification."""
+    fields = _merge_entry_fields(device.id, name_for_device(device), merge_device_ids)
+    if hass.config_entries.async_entry_for_domain_unique_id(
+        DOMAIN, fields["unique_id"]
+    ):
+        return
+    await hass.config_entries.async_add(
+        ConfigEntry(
+            data=fields["data"],
+            discovery_keys=MappingProxyType({}),
+            domain=DOMAIN,
+            minor_version=MINOR_VERSION,
+            options=fields["options"],
+            source=config_entry.source,
+            subentries_data=None,
+            title=fields["title"],
+            unique_id=fields["unique_id"],
+            version=VERSION,
+            disabled_by=config_entry.disabled_by,
         )
-        if hass.config_entries.async_entry_for_domain_unique_id(
-            DOMAIN, fields["unique_id"]
-        ):
-            return True
-        await hass.config_entries.async_add(
-            ConfigEntry(
-                data=fields["data"],
-                discovery_keys=MappingProxyType({}),
-                domain=DOMAIN,
-                minor_version=MINOR_VERSION,
-                options=fields["options"],
-                source=config_entry.source,
-                subentries_data=None,
-                title=fields["title"],
-                unique_id=fields["unique_id"],
-                version=VERSION,
-                disabled_by=config_entry.disabled_by,
-            )
-        )
-    return True
+    )
 
 
 def _merge_entry_fields(
@@ -260,43 +309,18 @@ def _migrate_v2_0(hass: HomeAssistant, config_entry: ConfigEntry[Any]) -> None:
     }
 
     match modification_type:
-        case ModificationType.DEVICE | ModificationType.ENTITY:
-            kind = (
-                KIND_DEVICES
-                if modification_type == ModificationType.DEVICE
-                else KIND_ENTITIES
+        case ModificationType.DEVICE:
+            _seed_original_data(
+                store, KIND_DEVICES, target_id, original_data, modification_data
             )
-            stored = store.get(kind, target_id)
-            for key in modification_data:
-                if key in original_data and key not in stored:
-                    store.async_set(
-                        kind, target_id, key, _json_value(original_data[key])
-                    )
+            original_data = {}
+        case ModificationType.ENTITY:
+            _seed_original_data(
+                store, KIND_ENTITIES, target_id, original_data, modification_data
+            )
             original_data = {}
         case ModificationType.MERGE:
-            for device_data in original_data.values():
-                for entity_id, entity_data in device_data.get(
-                    CONF_ENTITIES, {}
-                ).items():
-                    if (
-                        CONF_DEVICE_ID in entity_data
-                        and CONF_DEVICE_ID not in store.get(KIND_ENTITIES, entity_id)
-                    ):
-                        store.async_set(
-                            KIND_ENTITIES,
-                            entity_id,
-                            CONF_DEVICE_ID,
-                            entity_data[CONF_DEVICE_ID],
-                        )
-            original_data = {
-                device_id: {
-                    CONF_ENTITIES: {
-                        entity_id: {}
-                        for entity_id in device_data.get(CONF_ENTITIES, {})
-                    }
-                }
-                for device_id, device_data in original_data.items()
-            }
+            original_data = _migrate_v2_0_merge(store, original_data)
 
     hass.config_entries.async_update_entry(
         config_entry,
@@ -304,6 +328,43 @@ def _migrate_v2_0(hass: HomeAssistant, config_entry: ConfigEntry[Any]) -> None:
         options={**config_entry.options, CONF_MODIFICATION_DATA: modification_data},
         minor_version=MINOR_VERSION,
     )
+
+
+def _seed_original_data(
+    store: OriginalDataStore,
+    kind: str,
+    target_id: str,
+    original_data: dict[str, Any],
+    modification_data: dict[str, Any],
+) -> None:
+    """Store the original values of modified attributes kept by 2.0."""
+    stored = store.get(kind, target_id)
+    for key in modification_data:
+        if key in original_data and key not in stored:
+            store.async_set(kind, target_id, key, _json_value(original_data[key]))
+
+
+def _migrate_v2_0_merge(
+    store: OriginalDataStore, original_data: dict[str, Any]
+) -> dict[str, Any]:
+    """Store the original devices of merged entities and return the merged devices."""
+    for device_id, device_data in original_data.items():
+        for entity_id, entity_data in device_data.get(CONF_ENTITIES, {}).items():
+            _seed_original_data(
+                store,
+                KIND_ENTITIES,
+                entity_id,
+                {CONF_DEVICE_ID: entity_data.get(CONF_DEVICE_ID, device_id)},
+                {CONF_DEVICE_ID: None},
+            )
+    return {
+        device_id: {
+            CONF_ENTITIES: {
+                entity_id: {} for entity_id in device_data.get(CONF_ENTITIES, {})
+            }
+        }
+        for device_id, device_data in original_data.items()
+    }
 
 
 def _json_value(value: Any) -> Any:
