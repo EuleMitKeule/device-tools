@@ -8,6 +8,10 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.device_registry import (
     DeviceEntry,
+    DeviceRegistry,
+)
+from homeassistant.helpers.device_registry import (
+    async_entries_for_config_entry,
 )
 from homeassistant.helpers.device_registry import (
     async_get as async_get_device_registry,
@@ -45,7 +49,67 @@ class DeviceTools:
             "original_entity_configs": {},
             "original_device_configs": {},
         }
+        # Home Assistant 2026.8 moved devices to a single config entry and split
+        # devices that belonged to multiple config entries into new devices.
+        self._single_config_entry = hasattr(
+            DeviceRegistry, "async_get_devices_for_composite_device_id"
+        )
+        self._cleaned_up_entries: set[str] = set()
+        self._reported_missing: set[str] = set()
         self._run_task = hass.async_create_background_task(self.async_run(), DOMAIN)
+
+    def _resolve_device_id(self, device_id: str | None) -> str | None:
+        """Return the id of the device a device id refers to.
+
+        Home Assistant 2026.8 split devices that belonged to multiple config
+        entries into one device per config entry with new ids.
+        """
+
+        if device_id is None or not self._single_config_entry:
+            return device_id
+
+        splits = self._device_registry.async_get_devices_for_composite_device_id(
+            device_id
+        )
+
+        if not splits:
+            return device_id
+
+        def is_device_tools_entry(config_entry_id: str) -> bool:
+            config_entry = self._hass.config_entries.async_get_entry(config_entry_id)
+            return config_entry is not None and config_entry.domain == DOMAIN
+
+        for split in splits:
+            if (DOMAIN, split.config_entry_id) in split.identifiers:
+                return split.id
+        for split in splits:
+            if split.config_entry_id == split.composite_primary_config_entry and not (
+                is_device_tools_entry(split.config_entry_id)
+            ):
+                return split.id
+        for split in splits:
+            if not is_device_tools_entry(split.config_entry_id):
+                return split.id
+        return splits[0].id
+
+    def _cleanup_devices(self, entry_id: str, device_id: str) -> None:
+        """Remove empty duplicates of a device left behind by Home Assistant 2026.8."""
+
+        if not self._single_config_entry or entry_id in self._cleaned_up_entries:
+            return
+
+        self._cleaned_up_entries.add(entry_id)
+
+        for device in async_entries_for_config_entry(self._device_registry, entry_id):
+            if device.id == device_id:
+                continue
+
+            self._logger.info(
+                "Removing leftover duplicate device %s (id: %s)",
+                device.name_by_user or device.name,
+                device.id,
+            )
+            self._device_registry.async_remove_device(device.id)
 
     @callback
     def async_get_entries(
@@ -107,15 +171,37 @@ class DeviceTools:
                 device_modification["device_id"] = device.id
                 device_id = device.id
             else:
+                device_id = self._resolve_device_id(device_id)
+                device_modification["device_id"] = device_id
                 device = self._device_registry.async_get(device_id)
 
             if device is None:
-                self._logger.error(
-                    "[%s] Device not found (name: %s)",
-                    device_modification["modification_name"],
-                    device_modification["device_name"],
-                )
+                if entry_id not in self._reported_missing:
+                    self._reported_missing.add(entry_id)
+                    self._logger.error(
+                        "[%s] Device not found (name: %s)",
+                        device_modification["modification_name"],
+                        device_modification["device_name"],
+                    )
                 continue
+
+            self._reported_missing.discard(entry_id)
+            self._cleanup_devices(entry_id, device.id)
+
+            if (
+                attribute_modification := device_modification["attribute_modification"]
+            ) is not None:
+                attribute_modification["via_device_id"] = self._resolve_device_id(
+                    attribute_modification.get("via_device_id")
+                )
+
+            if (
+                merge_modification := device_modification["merge_modification"]
+            ) is not None:
+                merge_modification["devices"] = [
+                    self._resolve_device_id(merged_device_id)
+                    for merged_device_id in merge_modification["devices"]
+                ]
 
             if device_id in validated_devices:
                 self._logger.error(
@@ -335,6 +421,9 @@ class DeviceTools:
             config_entry_id
         )
 
+        if self._single_config_entry:
+            return
+
         self._device_registry.async_update_device(
             device_id,
             add_config_entry_id=config_entry_id,
@@ -352,8 +441,8 @@ class DeviceTools:
 
             device_id: str | None = device_modification["device_id"]
 
-            if TYPE_CHECKING:
-                assert device_id is not None
+            if device_id is None:
+                continue
 
             await self._async_revert_device(device_id)
 
@@ -378,7 +467,10 @@ class DeviceTools:
         entity = self._entity_registry.async_get(entity_id)
 
         if entity is None:
-            raise HomeAssistantError(f"Entity not found (id: {entity_id})")
+            self._logger.warning(
+                "Entity not found, cannot revert modification (id: %s)", entity_id
+            )
+            return
 
         original_entity_config = self._device_tools_data["original_entity_configs"].get(
             entity_id
@@ -397,7 +489,10 @@ class DeviceTools:
         device: DeviceEntry | None = self._device_registry.async_get(device_id)
 
         if device is None:
-            raise HomeAssistantError(f"Device not found (id: {device_id})")
+            self._logger.warning(
+                "Device not found, cannot revert modification (id: %s)", device_id
+            )
+            return
 
         original_device_config = self._device_tools_data["original_device_configs"].get(
             device_id
@@ -405,7 +500,7 @@ class DeviceTools:
 
         if original_device_config is None:
             self._logger.warning(
-                "[%s] Original device config not found (id: %s)",
+                "Original device config not found (id: %s)", device_id
             )
             return
 
@@ -418,6 +513,9 @@ class DeviceTools:
             serial_number=original_device_config["serial_number"],
             via_device_id=original_device_config["via_device_id"],
         )
+
+        if self._single_config_entry:
+            return
 
         for config_entry_id in original_device_config["config_entries"]:
             if config_entry_id not in device.config_entries:
@@ -482,7 +580,10 @@ class DeviceTools:
                     device, device_modification["merge_modification"]
                 )
 
-            if entry_id not in device.config_entries:
+            if (
+                not self._single_config_entry
+                and entry_id not in device.config_entries
+            ):
                 self._device_registry.async_update_device(
                     device.id,
                     add_config_entry_id=entry_id,
