@@ -1,7 +1,16 @@
 {
   "repository_url": "https://github.com/eulemitkeule/device-tools.git",
   "branches": [
-    "master"
+    {
+      "name": "1.x",
+      "range": "1.x",
+      "channel": "1.x"
+    },
+    "master",
+    {
+      "name": "beta",
+      "prerelease": true
+    }
   ],
   "plugins": [
     "@semantic-release/commit-analyzer",
