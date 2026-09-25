@@ -22,7 +22,7 @@ jobs:
         id: semantic
         uses: cycjimmy/semantic-release-action@v4
         env:
-          GITHUB_TOKEN: ${{ secrets.PAT }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Inject version into manifest
         if: steps.semantic.outputs.new_release_published == 'true'
@@ -43,4 +43,4 @@ jobs:
         run: |
           gh release upload ${{ steps.semantic.outputs.new_release_version }} device_tools.zip
         env:
-          GITHUB_TOKEN: ${{ secrets.PAT }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
