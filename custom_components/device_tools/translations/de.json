@@ -11,7 +11,9 @@
             "device_already_merged": "Eines der ausgewählten Geräte wird bereits mit einem anderen Gerät zusammengeführt",
             "merge_chain": "Geräte können nicht mit einem Gerät zusammengeführt werden, das selbst mit einem anderen Gerät zusammengeführt wird",
             "invalid_configuration_url": "Die Konfigurations-URL muss mit http://, https:// oder homeassistant:// beginnen",
-            "via_device_is_device": "Ein Gerät kann nicht über sich selbst verbunden sein"
+            "via_device_is_device": "Ein Gerät kann nicht über sich selbst verbunden sein",
+            "cannot_link_to_itself": "Ein Gerät kann nicht mit sich selbst verknüpft werden",
+            "linked_devices_same_config_entry": "Verknüpfte Geräte müssen von verschiedenen Integrationseinträgen stammen, zwei der ausgewählten Geräte gehören zum selben"
         },
         "step": {
             "user": {
@@ -90,6 +92,16 @@
                         "data_description": {
                             "assigned_entities": "Die Entitäten, die an diesem Gerät angezeigt werden sollen. Entitäten, die bereits zum Gerät gehören, werden nicht aufgelistet. Entfernte Entitäten kehren zu ihrem ursprünglichen Gerät zurück."
                         }
+                    },
+                    "device_linking": {
+                        "name": "Verknüpfte Geräte",
+                        "description": "Andere Geräte derselben Hardware auf der Geräteseite als verknüpfte Geräte anzeigen, z. B. dasselbe Gerät, das über zwei Integrationen eingebunden ist. Die Geräte und ihre Entitäten bleiben getrennt.",
+                        "data": {
+                            "linked_device_ids": "Verknüpfte Geräte"
+                        },
+                        "data_description": {
+                            "linked_device_ids": "Die Geräte, die mit diesem Gerät verknüpft werden sollen. Jedes Gerät muss von einem anderen Integrationseintrag stammen. Ein hier entferntes Gerät wird nicht mehr verknüpft."
+                        }
                     }
                 }
             },
@@ -136,7 +148,9 @@
             "device_already_merged": "Eines der ausgewählten Geräte wird bereits mit einem anderen Gerät zusammengeführt",
             "merge_chain": "Geräte können nicht mit einem Gerät zusammengeführt werden, das selbst mit einem anderen Gerät zusammengeführt wird",
             "invalid_configuration_url": "Die Konfigurations-URL muss mit http://, https:// oder homeassistant:// beginnen",
-            "via_device_is_device": "Ein Gerät kann nicht über sich selbst verbunden sein"
+            "via_device_is_device": "Ein Gerät kann nicht über sich selbst verbunden sein",
+            "cannot_link_to_itself": "Ein Gerät kann nicht mit sich selbst verknüpft werden",
+            "linked_devices_same_config_entry": "Verknüpfte Geräte müssen von verschiedenen Integrationseinträgen stammen, zwei der ausgewählten Geräte gehören zum selben"
         },
         "step": {
             "init": {
@@ -188,6 +202,16 @@
                         },
                         "data_description": {
                             "assigned_entities": "Die Entitäten, die an diesem Gerät angezeigt werden sollen. Entitäten, die bereits zum Gerät gehören, werden nicht aufgelistet. Entfernte Entitäten kehren zu ihrem ursprünglichen Gerät zurück."
+                        }
+                    },
+                    "device_linking": {
+                        "name": "Verknüpfte Geräte",
+                        "description": "Andere Geräte derselben Hardware auf der Geräteseite als verknüpfte Geräte anzeigen, z. B. dasselbe Gerät, das über zwei Integrationen eingebunden ist. Die Geräte und ihre Entitäten bleiben getrennt.",
+                        "data": {
+                            "linked_device_ids": "Verknüpfte Geräte"
+                        },
+                        "data_description": {
+                            "linked_device_ids": "Die Geräte, die mit diesem Gerät verknüpft werden sollen. Jedes Gerät muss von einem anderen Integrationseintrag stammen. Ein hier entferntes Gerät wird nicht mehr verknüpft."
                         }
                     },
                     "entity_attributes": {

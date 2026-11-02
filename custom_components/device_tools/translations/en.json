@@ -11,7 +11,9 @@
             "device_already_merged": "One of the selected devices is already merged into another device",
             "merge_chain": "Devices cannot be merged into a device which is itself merged into another device",
             "invalid_configuration_url": "The configuration URL must start with http://, https:// or homeassistant://",
-            "via_device_is_device": "A device cannot be connected via itself"
+            "via_device_is_device": "A device cannot be connected via itself",
+            "cannot_link_to_itself": "A device cannot be linked to itself",
+            "linked_devices_same_config_entry": "Linked devices must be provided by different integration entries, two of the selected devices belong to the same one"
         },
         "step": {
             "user": {
@@ -90,6 +92,16 @@
                         "data_description": {
                             "assigned_entities": "The entities to show on this device. Entities that already belong to the device are not listed. Removed entities return to their original device."
                         }
+                    },
+                    "device_linking": {
+                        "name": "Linked devices",
+                        "description": "Show other devices of the same hardware as linked devices on the device page, e.g. the same device added through two integrations. The devices and their entities are kept separate.",
+                        "data": {
+                            "linked_device_ids": "Linked devices"
+                        },
+                        "data_description": {
+                            "linked_device_ids": "The devices to link to this device. Every device must be provided by a different integration entry. Removing a device here unlinks it."
+                        }
                     }
                 }
             },
@@ -136,7 +148,9 @@
             "device_already_merged": "One of the selected devices is already merged into another device",
             "merge_chain": "Devices cannot be merged into a device which is itself merged into another device",
             "invalid_configuration_url": "The configuration URL must start with http://, https:// or homeassistant://",
-            "via_device_is_device": "A device cannot be connected via itself"
+            "via_device_is_device": "A device cannot be connected via itself",
+            "cannot_link_to_itself": "A device cannot be linked to itself",
+            "linked_devices_same_config_entry": "Linked devices must be provided by different integration entries, two of the selected devices belong to the same one"
         },
         "step": {
             "init": {
@@ -188,6 +202,16 @@
                         },
                         "data_description": {
                             "assigned_entities": "The entities to show on this device. Entities that already belong to the device are not listed. Removed entities return to their original device."
+                        }
+                    },
+                    "device_linking": {
+                        "name": "Linked devices",
+                        "description": "Show other devices of the same hardware as linked devices on the device page, e.g. the same device added through two integrations. The devices and their entities are kept separate.",
+                        "data": {
+                            "linked_device_ids": "Linked devices"
+                        },
+                        "data_description": {
+                            "linked_device_ids": "The devices to link to this device. Every device must be provided by a different integration entry. Removing a device here unlinks it."
                         }
                     },
                     "entity_attributes": {

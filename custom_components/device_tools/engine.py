@@ -21,6 +21,8 @@ from .const import (
     CONF_ENTITIES,
     CONF_ENTITY_CATEGORY,
     CONF_ENTRY_TYPE,
+    CONF_IDENTIFIERS,
+    CONF_LINKED_DEVICE_IDS,
     CONF_MODIFICATION_DATA,
     CONF_MODIFICATION_ENTRY_ID,
     CONF_MODIFICATION_ORIGINAL_DATA,
@@ -44,6 +46,8 @@ from .utils import (
     assigned_entities,
     async_get_device,
     async_resolve_device_id,
+    link_identifier,
+    linked_device_ids,
     merge_sources,
     modification_data,
     modification_entry_id,
@@ -202,9 +206,17 @@ class ModificationEngine:
                         continue
                     del options[CONF_DEVICE_ID]
                 case ModificationType.DEVICE:
-                    if options.get(CONF_VIA_DEVICE_ID) != device_id:
+                    linked = options.get(CONF_LINKED_DEVICE_IDS, [])
+                    if options.get(CONF_VIA_DEVICE_ID) != device_id and (
+                        device_id not in linked
+                    ):
                         continue
-                    del options[CONF_VIA_DEVICE_ID]
+                    if options.get(CONF_VIA_DEVICE_ID) == device_id:
+                        del options[CONF_VIA_DEVICE_ID]
+                    if device_id in linked:
+                        options[CONF_LINKED_DEVICE_IDS] = [
+                            linked_id for linked_id in linked if linked_id != device_id
+                        ]
                 case ModificationType.MERGE:
                     sources = dict(data.get(CONF_MODIFICATION_ORIGINAL_DATA, {}))
                     if sources.pop(device_id, None) is None:
@@ -260,16 +272,20 @@ class ModificationEngine:
     def get_desired_device_data(self, device_id: str) -> dict[str, Any]:
         """Return the attribute values all modifications want a device to have."""
         desired_data: dict[str, Any] = {}
+        identifiers: list[list[str]] = []
         for config_entry in self._sorted_config_entries():
-            if (
-                modification_type(config_entry) == ModificationType.DEVICE
-                and modification_entry_id(config_entry) == device_id
-            ):
+            if modification_type(config_entry) != ModificationType.DEVICE:
+                continue
+            if modification_entry_id(config_entry) == device_id:
                 desired_data.update(
                     _filter_data(
                         ModificationType.DEVICE, modification_data(config_entry)
                     )
                 )
+            if device_id in self._get_linked_devices(config_entry):
+                identifiers.append([DOMAIN, link_identifier(config_entry)])
+        if identifiers:
+            desired_data[CONF_IDENTIFIERS] = sorted(identifiers)
 
         if (via_device_id := desired_data.get(CONF_VIA_DEVICE_ID)) is not None and (
             via_device_id == device_id
@@ -277,6 +293,21 @@ class ModificationEngine:
         ):
             del desired_data[CONF_VIA_DEVICE_ID]
         return desired_data
+
+    def _get_linked_devices(self, config_entry: ConfigEntry[Any]) -> set[str]:
+        """Return the devices a device modification links, including its device.
+
+        Missing devices are left out. Nothing is linked unless at least one of the
+        linked devices exists.
+        """
+        linked = {
+            device_id
+            for device_id in linked_device_ids(config_entry)
+            if isinstance(async_get_device(self._hass, device_id), dr.DeviceEntry)
+        }
+        if not linked:
+            return set()
+        return linked | {modification_entry_id(config_entry)}
 
     def get_original_entity_data(self, entity_id: str) -> dict[str, Any]:
         """Return the attribute values an entity would have without modifications."""
@@ -308,7 +339,8 @@ class ModificationEngine:
                 return {modification_entry_id(config_entry)}, set()
             case ModificationType.DEVICE:
                 return set(assigned_entities(config_entry)), {
-                    modification_entry_id(config_entry)
+                    modification_entry_id(config_entry),
+                    *linked_device_ids(config_entry),
                 }
             case ModificationType.MERGE:
                 return {
@@ -669,6 +701,12 @@ def async_resolve_references(
     for key in (CONF_DEVICE_ID, CONF_VIA_DEVICE_ID):
         if (device_id := options.get(key)) is not None:
             options[key] = resolve(device_id)
+    if CONF_LINKED_DEVICE_IDS in options:
+        options[CONF_LINKED_DEVICE_IDS] = list(
+            dict.fromkeys(
+                resolve(device_id) for device_id in linked_device_ids(config_entry)
+            )
+        )
     if modification_type(config_entry) == ModificationType.MERGE:
         data[CONF_MODIFICATION_ORIGINAL_DATA] = _resolve_merge_sources(
             data[CONF_MODIFICATION_ORIGINAL_DATA],
@@ -729,7 +767,8 @@ def _referenced_ids(config_entry: ConfigEntry[Any]) -> tuple[set[str], set[str]]
             return {modification_entry_id(config_entry)}, device_ids
         case ModificationType.DEVICE:
             return set(assigned_entities(config_entry)), device_ids | {
-                modification_entry_id(config_entry)
+                modification_entry_id(config_entry),
+                *linked_device_ids(config_entry),
             }
         case ModificationType.MERGE:
             return set(), device_ids | {modification_entry_id(config_entry)}

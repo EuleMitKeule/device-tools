@@ -21,6 +21,7 @@ from .const import (
     CONF_CONFIGURATION_URL,
     CONF_DEVICE_ATTRIBUTES,
     CONF_DEVICE_ID,
+    CONF_DEVICE_LINKING,
     CONF_ENTITIES,
     CONF_ENTITY_ASSIGNMENT,
     CONF_ENTITY_ATTRIBUTES,
@@ -28,6 +29,7 @@ from .const import (
     CONF_ENTRY_TYPE,
     CONF_HW_VERSION,
     CONF_INFORMATION,
+    CONF_LINKED_DEVICE_IDS,
     CONF_MANUFACTURER,
     CONF_MERGE_DEVICE_IDS,
     CONF_MERGE_OPTIONS,
@@ -139,6 +141,7 @@ def _get_device_schema(
 ) -> vol.Schema:
     """Return the schema of a device modification."""
     assigned_entities: list[str] = modification_data.get(CONF_ASSIGNED_ENTITIES, [])
+    linked_device_ids: list[str] = modification_data.get(CONF_LINKED_DEVICE_IDS, [])
     native_entities = (
         [
             entity.entity_id
@@ -198,6 +201,19 @@ def _get_device_schema(
                         ),
                     }
                 )
+            ),
+            vol.Optional(CONF_DEVICE_LINKING): section(
+                vol.Schema(
+                    {
+                        vol.Optional(
+                            CONF_LINKED_DEVICE_IDS,
+                            description={"suggested_value": linked_device_ids},
+                        ): selector.DeviceSelector(
+                            selector.DeviceSelectorConfig(multiple=True)
+                        ),
+                    }
+                ),
+                {"collapsed": not linked_device_ids},
             ),
         }
     )
@@ -315,6 +331,15 @@ def _user_input_to_modification_data(
             dict.fromkeys(assigned_entities)
         )
 
+    if mod_type == ModificationType.DEVICE and (
+        linked_device_ids := user_input.get(CONF_DEVICE_LINKING, {}).get(
+            CONF_LINKED_DEVICE_IDS
+        )
+    ):
+        modification_data[CONF_LINKED_DEVICE_IDS] = list(
+            dict.fromkeys(linked_device_ids)
+        )
+
     return modification_data
 
 
@@ -337,7 +362,38 @@ def _validate_modification_data(
         async_get_device(hass, device_id) is None
     ):
         errors["base"] = "entry_not_found"
+    if linked_device_ids := modification_data.get(CONF_LINKED_DEVICE_IDS):
+        errors.update(
+            _validate_linked_device_ids(hass, modification_entry_id, linked_device_ids)
+        )
     return errors
+
+
+def _validate_linked_device_ids(
+    hass: HomeAssistant,
+    modification_entry_id: str | None,
+    linked_device_ids: list[str],
+) -> dict[str, str]:
+    """Return form errors of the devices to link.
+
+    Linked devices share an identifier, which must be unique within a config entry.
+    So every linked device has to belong to a different config entry.
+    """
+    if modification_entry_id in linked_device_ids:
+        return {"base": "cannot_link_to_itself"}
+    config_entry_ids: set[str] = set()
+    for device_id in [
+        *([modification_entry_id] if modification_entry_id is not None else []),
+        *linked_device_ids,
+    ]:
+        if (device := async_get_device(hass, device_id)) is None:
+            return {"base": "entry_not_found"}
+        if not isinstance(device, dr.DeviceEntry):
+            return {"base": "child_device"}
+        if device.config_entry_id in config_entry_ids:
+            return {"base": "linked_devices_same_config_entry"}
+        config_entry_ids.add(device.config_entry_id)
+    return {}
 
 
 def _validate_merge_device_ids(

@@ -16,6 +16,7 @@ A custom integration to change devices and entities that other integrations prov
 * Assign entities to any device, e.g. template sensors or helpers to the device they describe
 * Create new devices and assign entities to them
 * Merge devices by moving all entities of several devices to one device
+* Link devices of different integrations that belong to the same hardware
 * Change the device and category of single entities
 
 Every change is reverted as soon as you delete or disable the modification.
@@ -56,6 +57,8 @@ Select a device, then change any of its attributes:
 Fields are prefilled with the current values. Only fields you change are modified. Clearing a field or setting it back to its original value stops modifying it.
 
 Below the attributes you can assign entities of other devices, or entities without a device, to this device. Removing an entity from the list moves it back to its original device.
+
+Under *Linked devices* you can link other devices to this device, e.g. a device that two integrations provide separately. Linked devices are shown on each other's device page, while the devices and their entities stay separate. Device Tools links them by adding a shared identifier to all of them, so every linked device has to be provided by a different integration entry. Removing a device from the list unlinks it.
 
 ### Create a device
 

@@ -12,6 +12,7 @@ from homeassistant.helpers import device_registry as dr, entity_registry as er
 from .const import (
     CONF_ASSIGNED_ENTITIES,
     CONF_ENTITIES,
+    CONF_LINKED_DEVICE_IDS,
     CONF_MODIFICATION_DATA,
     CONF_MODIFICATION_ENTRY_ID,
     CONF_MODIFICATION_IS_CUSTOM_ENTRY,
@@ -19,6 +20,7 @@ from .const import (
     CONF_MODIFICATION_TYPE,
     CONFIGURATION_URL_SCHEMES,
     DOMAIN,
+    LINK_IDENTIFIER_PREFIX,
     ModificationType,
 )
 
@@ -86,6 +88,16 @@ def merge_sources(config_entry: ConfigEntry[Any]) -> dict[str, list[str]]:
 def assigned_entities(config_entry: ConfigEntry[Any]) -> list[str]:
     """Return the entity ids assigned to the device of a device modification."""
     return list(modification_data(config_entry).get(CONF_ASSIGNED_ENTITIES, []))
+
+
+def linked_device_ids(config_entry: ConfigEntry[Any]) -> list[str]:
+    """Return the device ids linked to the device of a device modification."""
+    return list(modification_data(config_entry).get(CONF_LINKED_DEVICE_IDS, []))
+
+
+def link_identifier(config_entry: ConfigEntry[Any]) -> str:
+    """Return the identifier shared by the devices a modification links."""
+    return f"{LINK_IDENTIFIER_PREFIX}{config_entry.entry_id}"
 
 
 @callback
