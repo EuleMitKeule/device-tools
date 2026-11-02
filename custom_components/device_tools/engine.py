@@ -40,6 +40,7 @@ from .entry_handler import (
     EntryHandler,
     get_device_data,
     get_entity_data,
+    is_link_identifier,
 )
 from .original_data_store import KIND_DEVICES, KIND_ENTITIES, OriginalDataStore
 from .utils import (
@@ -126,6 +127,7 @@ class ModificationEngine:
         if self._stale_original_data_forgotten:
             return
         self._stale_original_data_forgotten = True
+        self._async_remove_stale_link_identifiers()
         for kind, desired_data in (
             (KIND_ENTITIES, self.get_desired_entity_data),
             (KIND_DEVICES, self.get_desired_device_data),
@@ -141,6 +143,36 @@ class ModificationEngine:
                             target_id,
                         )
                         self._store.async_remove(kind, target_id, key)
+
+    @callback
+    def _async_remove_stale_link_identifiers(self) -> None:
+        """Remove link identifiers no loaded modification wants a device to have.
+
+        They are left over if a modification could not be unloaded properly, e.g.
+        because it failed to set up and was removed, or because an older version of
+        Device Tools was installed in the meantime.
+        """
+        device_registry = dr.async_get(self._hass)
+        for device in list(device_registry.devices):
+            desired = {
+                tuple(identifier)
+                for identifier in self.get_desired_device_data(device.id).get(
+                    CONF_IDENTIFIERS, []
+                )
+            }
+            stale = {
+                identifier
+                for identifier in device.identifiers
+                if is_link_identifier(identifier) and identifier not in desired
+            }
+            if not stale:
+                continue
+            _LOGGER.info(
+                "Removing stale link identifiers %s from device %s", stale, device.id
+            )
+            device_registry.async_update_device(
+                device.id, new_identifiers=device.identifiers - stale
+            )
 
     @callback
     def async_on_entry_loaded(self, config_entry: ConfigEntry[Any]) -> None:
@@ -190,6 +222,7 @@ class ModificationEngine:
         ir.async_delete_issue(
             self._hass, DOMAIN, f"{ISSUE_MISSING_REFERENCES}_{config_entry.entry_id}"
         )
+        self._async_remove_stale_link_identifiers()
         if not modification_is_custom_entry(config_entry):
             return
         self._async_remove_device_references(modification_entry_id(config_entry))

@@ -240,7 +240,7 @@ def get_device_data(hass: HomeAssistant, device_id: str) -> dict[str, Any] | Non
     }
 
 
-def _is_link_identifier(identifier: tuple[str, str] | list[str]) -> bool:
+def is_link_identifier(identifier: tuple[str, str] | list[str]) -> bool:
     """Return whether an identifier was added by Device Tools to link devices."""
     domain, value = identifier
     return domain == DOMAIN and value.startswith(LINK_IDENTIFIER_PREFIX)
@@ -276,7 +276,7 @@ def _without_additions(key: str, value: Any, desired_value: Any) -> Any:
         {
             tuple(item)
             for item in value or []
-            if tuple(item) not in additions and not _is_link_identifier(item)
+            if tuple(item) not in additions and not is_link_identifier(item)
         },
     )
 

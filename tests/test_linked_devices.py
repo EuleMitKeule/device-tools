@@ -437,3 +437,97 @@ async def test_link_options_flow(
     await hass.async_block_till_done()
     assert config_entry.options[CONF_MODIFICATION_DATA] == {}
     assert _identifiers(hass, other.id) == {(SOURCE_DOMAIN, "b")}
+
+
+async def test_device_with_connections_only(
+    hass: HomeAssistant, source_entry: MockConfigEntry
+) -> None:
+    other_entry = _source(hass, OTHER_DOMAIN, "Other")
+    device_registry = dr.async_get(hass)
+    other = device_registry.async_get_or_create(
+        config_entry_id=other_entry.entry_id,
+        connections={(dr.CONNECTION_NETWORK_MAC, "aa:bb:cc:dd:ee:ff")},
+    )
+    device = create_device(hass, source_entry, "a")
+    config_entry = modification_entry(
+        ModificationType.DEVICE, device.id, {CONF_LINKED_DEVICE_IDS: [other.id]}
+    )
+    await setup_entry(hass, config_entry)
+    assert _identifiers(hass, other.id) == {_link(config_entry)}
+
+    assert await hass.config_entries.async_unload(config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert _identifiers(hass, other.id) == set()
+    restored = device_registry.async_get(other.id)
+    assert restored is not None
+    assert restored.connections == {(dr.CONNECTION_NETWORK_MAC, "aa:bb:cc:dd:ee:ff")}
+
+
+async def test_stale_link_identifiers_are_removed_on_start(
+    hass: HomeAssistant, source_entry: MockConfigEntry
+) -> None:
+    device = create_device(hass, source_entry, "a")
+    other = create_device(hass, _source(hass, OTHER_DOMAIN, "Other"), "b")
+    # Left over e.g. by an older version of Device Tools after a downgrade.
+    device_registry = dr.async_get(hass)
+    device_registry.async_update_device(
+        other.id,
+        new_identifiers={(SOURCE_DOMAIN, "b"), (DOMAIN, "link_stale")},
+    )
+    config_entry = modification_entry(
+        ModificationType.DEVICE, device.id, {CONF_LINKED_DEVICE_IDS: [other.id]}
+    )
+    config_entry.add_to_hass(hass)
+    # The identifier of the modification is kept, since it is still wanted.
+    device_registry.async_update_device(
+        device.id,
+        new_identifiers={(SOURCE_DOMAIN, "a"), _link(config_entry)},
+    )
+    unrelated = create_device(hass, source_entry, "c")
+    device_registry.async_update_device(
+        unrelated.id,
+        new_identifiers={(SOURCE_DOMAIN, "c"), (DOMAIN, "link_stale")},
+    )
+
+    assert await hass.config_entries.async_setup(config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert _identifiers(hass, device.id) == {(SOURCE_DOMAIN, "a"), _link(config_entry)}
+    assert _identifiers(hass, other.id) == {(SOURCE_DOMAIN, "b"), _link(config_entry)}
+    assert _identifiers(hass, unrelated.id) == {(SOURCE_DOMAIN, "c")}
+
+    assert await hass.config_entries.async_unload(config_entry.entry_id)
+    await hass.async_block_till_done()
+    assert _identifiers(hass, device.id) == {(SOURCE_DOMAIN, "a")}
+    assert _identifiers(hass, other.id) == {(SOURCE_DOMAIN, "b")}
+
+
+async def test_removing_modification_that_is_not_loaded(
+    hass: HomeAssistant, source_entry: MockConfigEntry
+) -> None:
+    device = create_device(hass, source_entry, "a")
+    other = create_device(hass, _source(hass, OTHER_DOMAIN, "Other"), "b")
+    loaded = modification_entry(
+        ModificationType.DEVICE, device.id, {CONF_MANUFACTURER: "Changed"}
+    )
+    await setup_entry(hass, loaded)
+    not_loaded = modification_entry(
+        ModificationType.DEVICE, other.id, {CONF_LINKED_DEVICE_IDS: [device.id]}
+    )
+    not_loaded.add_to_hass(hass)
+    # Links applied before the modification failed to unload.
+    device_registry = dr.async_get(hass)
+    for linked in (device, other):
+        current = device_registry.async_get(linked.id)
+        assert current is not None
+        device_registry.async_update_device(
+            linked.id, new_identifiers=current.identifiers | {_link(not_loaded)}
+        )
+    await hass.async_block_till_done()
+
+    assert await hass.config_entries.async_remove(not_loaded.entry_id)
+    await hass.async_block_till_done()
+
+    assert _identifiers(hass, device.id) == {(SOURCE_DOMAIN, "a")}
+    assert _identifiers(hass, other.id) == {(SOURCE_DOMAIN, "b")}
