@@ -45,8 +45,8 @@ def _source(hass: HomeAssistant, domain: str, title: str) -> MockConfigEntry:
     return config_entry
 
 
-def _link(config_entry: MockConfigEntry) -> tuple[str, str]:
-    return (DOMAIN, f"link_{config_entry.entry_id}")
+def _link(config_entry: MockConfigEntry, device_id: str) -> tuple[str, str]:
+    return (DOMAIN, f"link_{config_entry.entry_id}_{device_id}")
 
 
 def _identifiers(hass: HomeAssistant, device_id: str) -> set[tuple[str, str]]:
@@ -84,8 +84,9 @@ async def test_devices_are_linked_and_unlinked(
     )
     await setup_entry(hass, config_entry)
 
-    assert _identifiers(hass, device.id) == {(SOURCE_DOMAIN, "a"), _link(config_entry)}
-    assert _identifiers(hass, other.id) == {(SOURCE_DOMAIN, "b"), _link(config_entry)}
+    link = _link(config_entry, other.id)
+    assert _identifiers(hass, device.id) == {(SOURCE_DOMAIN, "a"), link}
+    assert _identifiers(hass, other.id) == {(SOURCE_DOMAIN, "b"), link}
     assert await _linked_devices(hass, hass_ws_client, device.id) == {other.id}
     assert await _linked_devices(hass, hass_ws_client, other.id) == {device.id}
     store = hass.data[DATA_KEY].store
@@ -114,7 +115,7 @@ async def test_unload_unlinks_devices(
         ModificationType.DEVICE, device.id, {CONF_LINKED_DEVICE_IDS: [other.id]}
     )
     await setup_entry(hass, config_entry)
-    assert _link(config_entry) in _identifiers(hass, other.id)
+    assert _link(config_entry, other.id) in _identifiers(hass, other.id)
 
     assert await hass.config_entries.async_unload(config_entry.entry_id)
     await hass.async_block_till_done()
@@ -145,10 +146,37 @@ async def test_several_devices_are_linked(
         second.id,
         third.id,
     }
-    assert await _linked_devices(hass, hass_ws_client, second.id) == {
-        device.id,
-        third.id,
+    # The linked devices are only linked to the device, not to each other.
+    assert await _linked_devices(hass, hass_ws_client, second.id) == {device.id}
+    assert await _linked_devices(hass, hass_ws_client, third.id) == {device.id}
+
+
+async def test_devices_of_one_integration_are_linked(
+    hass: HomeAssistant,
+    hass_ws_client: WebSocketGenerator,
+    source_entry: MockConfigEntry,
+) -> None:
+    lights = [create_device(hass, source_entry, f"light_{index}") for index in range(3)]
+    group = modification_entry(
+        ModificationType.DEVICE,
+        "placeholder",
+        {CONF_LINKED_DEVICE_IDS: [light.id for light in lights]},
+        is_custom_entry=True,
+        name="Light group",
+    )
+    await setup_entry(hass, group)
+    group_id = group.data[CONF_MODIFICATION_ENTRY_ID]
+
+    assert await _linked_devices(hass, hass_ws_client, group_id) == {
+        light.id for light in lights
     }
+    for light in lights:
+        assert await _linked_devices(hass, hass_ws_client, light.id) == {group_id}
+
+    assert await hass.config_entries.async_remove(group.entry_id)
+    await hass.async_block_till_done()
+    for index, light in enumerate(lights):
+        assert _identifiers(hass, light.id) == {(SOURCE_DOMAIN, f"light_{index}")}
 
 
 async def test_device_linked_by_two_modifications(
@@ -169,14 +197,17 @@ async def test_device_linked_by_two_modifications(
 
     assert _identifiers(hass, hub.id) == {
         (SOURCE_DOMAIN, "hub"),
-        _link(first_link),
-        _link(second_link),
+        _link(first_link, hub.id),
+        _link(second_link, hub.id),
     }
 
     assert await hass.config_entries.async_remove(first_link.entry_id)
     await hass.async_block_till_done()
 
-    assert _identifiers(hass, hub.id) == {(SOURCE_DOMAIN, "hub"), _link(second_link)}
+    assert _identifiers(hass, hub.id) == {
+        (SOURCE_DOMAIN, "hub"),
+        _link(second_link, hub.id),
+    }
     assert _identifiers(hass, device.id) == {(SOURCE_DOMAIN, "a")}
 
     assert await hass.config_entries.async_remove(second_link.entry_id)
@@ -206,7 +237,7 @@ async def test_integration_identifier_updates_are_kept(
     assert _identifiers(hass, other.id) == {
         (SOURCE_DOMAIN, "b"),
         (SOURCE_DOMAIN, "serial"),
-        _link(config_entry),
+        _link(config_entry, other.id),
     }
 
     # The integration replaces all identifiers, dropping the link.
@@ -214,7 +245,10 @@ async def test_integration_identifier_updates_are_kept(
         other.id, new_identifiers={(SOURCE_DOMAIN, "new")}
     )
     await hass.async_block_till_done()
-    assert _identifiers(hass, other.id) == {(SOURCE_DOMAIN, "new"), _link(config_entry)}
+    assert _identifiers(hass, other.id) == {
+        (SOURCE_DOMAIN, "new"),
+        _link(config_entry, other.id),
+    }
     assert hass.data[DATA_KEY].store.get(KIND_DEVICES, other.id) == {
         CONF_IDENTIFIERS: [[SOURCE_DOMAIN, "new"]]
     }
@@ -245,8 +279,9 @@ async def test_linked_device_removed_and_readded(
     restored = create_device(hass, other_entry, "b")
     await hass.async_block_till_done()
     assert restored.id == other.id
-    assert _identifiers(hass, device.id) == {(SOURCE_DOMAIN, "a"), _link(config_entry)}
-    assert _identifiers(hass, other.id) == {(SOURCE_DOMAIN, "b"), _link(config_entry)}
+    link = _link(config_entry, other.id)
+    assert _identifiers(hass, device.id) == {(SOURCE_DOMAIN, "a"), link}
+    assert _identifiers(hass, other.id) == {(SOURCE_DOMAIN, "b"), link}
 
 
 async def test_stale_link_identifiers_are_not_restored(
@@ -264,7 +299,10 @@ async def test_stale_link_identifiers_are_not_restored(
     )
     await setup_entry(hass, config_entry)
 
-    assert _identifiers(hass, other.id) == {(SOURCE_DOMAIN, "b"), _link(config_entry)}
+    assert _identifiers(hass, other.id) == {
+        (SOURCE_DOMAIN, "b"),
+        _link(config_entry, other.id),
+    }
 
     assert await hass.config_entries.async_unload(config_entry.entry_id)
     await hass.async_block_till_done()
@@ -288,7 +326,7 @@ async def test_created_device_is_linked(
 
     assert _identifiers(hass, device_id) == {
         (DOMAIN, config_entry.entry_id),
-        _link(config_entry),
+        _link(config_entry, other.id),
     }
     assert await _linked_devices(hass, hass_ws_client, other.id) == {device_id}
 
@@ -321,7 +359,8 @@ async def test_removed_created_device_is_removed_from_links(
     assert config_entry.options[CONF_MODIFICATION_DATA] == {
         CONF_LINKED_DEVICE_IDS: [other.id]
     }
-    assert _link(config_entry) in _identifiers(hass, other.id)
+    assert _link(config_entry, other.id) in _identifiers(hass, other.id)
+    assert _link(config_entry, created_id) not in _identifiers(hass, device.id)
 
 
 async def _start_device_flow(hass: HomeAssistant, device_id: str) -> str:
@@ -404,13 +443,11 @@ async def test_create_device_flow_with_links(
     result = await hass.config_entries.flow.async_configure(
         flow_id, _form([first.id, second.id])
     )
-    assert result["errors"] == {"base": "linked_devices_same_config_entry"}
-
-    result = await hass.config_entries.flow.async_configure(flow_id, _form([first.id]))
     assert result["type"] is FlowResultType.CREATE_ENTRY
     await hass.async_block_till_done()
     config_entry = result["result"]
-    assert _link(config_entry) in _identifiers(hass, first.id)
+    assert _link(config_entry, first.id) in _identifiers(hass, first.id)
+    assert _link(config_entry, second.id) in _identifiers(hass, second.id)
 
 
 async def test_link_options_flow(
@@ -453,7 +490,7 @@ async def test_device_with_connections_only(
         ModificationType.DEVICE, device.id, {CONF_LINKED_DEVICE_IDS: [other.id]}
     )
     await setup_entry(hass, config_entry)
-    assert _identifiers(hass, other.id) == {_link(config_entry)}
+    assert _identifiers(hass, other.id) == {_link(config_entry, other.id)}
 
     assert await hass.config_entries.async_unload(config_entry.entry_id)
     await hass.async_block_till_done()
@@ -479,10 +516,15 @@ async def test_stale_link_identifiers_are_removed_on_start(
         ModificationType.DEVICE, device.id, {CONF_LINKED_DEVICE_IDS: [other.id]}
     )
     config_entry.add_to_hass(hass)
-    # The identifier of the modification is kept, since it is still wanted.
+    # The identifier of the modification is kept, since it is still wanted. The
+    # one of the previous test version, shared by all linked devices, is removed.
     device_registry.async_update_device(
         device.id,
-        new_identifiers={(SOURCE_DOMAIN, "a"), _link(config_entry)},
+        new_identifiers={
+            (SOURCE_DOMAIN, "a"),
+            _link(config_entry, other.id),
+            (DOMAIN, f"link_{config_entry.entry_id}"),
+        },
     )
     unrelated = create_device(hass, source_entry, "c")
     device_registry.async_update_device(
@@ -493,8 +535,9 @@ async def test_stale_link_identifiers_are_removed_on_start(
     assert await hass.config_entries.async_setup(config_entry.entry_id)
     await hass.async_block_till_done()
 
-    assert _identifiers(hass, device.id) == {(SOURCE_DOMAIN, "a"), _link(config_entry)}
-    assert _identifiers(hass, other.id) == {(SOURCE_DOMAIN, "b"), _link(config_entry)}
+    link = _link(config_entry, other.id)
+    assert _identifiers(hass, device.id) == {(SOURCE_DOMAIN, "a"), link}
+    assert _identifiers(hass, other.id) == {(SOURCE_DOMAIN, "b"), link}
     assert _identifiers(hass, unrelated.id) == {(SOURCE_DOMAIN, "c")}
 
     assert await hass.config_entries.async_unload(config_entry.entry_id)
@@ -522,7 +565,8 @@ async def test_removing_modification_that_is_not_loaded(
         current = device_registry.async_get(linked.id)
         assert current is not None
         device_registry.async_update_device(
-            linked.id, new_identifiers=current.identifiers | {_link(not_loaded)}
+            linked.id,
+            new_identifiers=current.identifiers | {_link(not_loaded, device.id)},
         )
     await hass.async_block_till_done()
 

@@ -17,6 +17,7 @@ from homeassistant.helpers import (
 
 from .const import (
     CONF_ASSIGNED_ENTITIES,
+    CONF_CONNECTIONS,
     CONF_DEVICE_ID,
     CONF_ENTITIES,
     CONF_ENTITY_CATEGORY,
@@ -44,6 +45,7 @@ from .entry_handler import (
 )
 from .original_data_store import KIND_DEVICES, KIND_ENTITIES, OriginalDataStore
 from .utils import (
+    added_connections,
     assigned_entities,
     async_get_device,
     async_resolve_device_id,
@@ -306,19 +308,28 @@ class ModificationEngine:
         """Return the attribute values all modifications want a device to have."""
         desired_data: dict[str, Any] = {}
         identifiers: list[list[str]] = []
+        connections: list[list[str]] = []
         for config_entry in self._sorted_config_entries():
             if modification_type(config_entry) != ModificationType.DEVICE:
                 continue
+            linked = self._get_linked_devices(config_entry)
             if modification_entry_id(config_entry) == device_id:
                 desired_data.update(
                     _filter_data(
                         ModificationType.DEVICE, modification_data(config_entry)
                     )
                 )
-            if device_id in self._get_linked_devices(config_entry):
-                identifiers.append([DOMAIN, link_identifier(config_entry)])
+                connections.extend(added_connections(config_entry))
+                identifiers.extend(
+                    [DOMAIN, link_identifier(config_entry, linked_id)]
+                    for linked_id in linked
+                )
+            elif device_id in linked:
+                identifiers.append([DOMAIN, link_identifier(config_entry, device_id)])
         if identifiers:
             desired_data[CONF_IDENTIFIERS] = sorted(identifiers)
+        if connections:
+            desired_data[CONF_CONNECTIONS] = sorted(connections)
 
         if (via_device_id := desired_data.get(CONF_VIA_DEVICE_ID)) is not None and (
             via_device_id == device_id
@@ -328,19 +339,13 @@ class ModificationEngine:
         return desired_data
 
     def _get_linked_devices(self, config_entry: ConfigEntry[Any]) -> set[str]:
-        """Return the devices a device modification links, including its device.
-
-        Missing devices are left out. Nothing is linked unless at least one of the
-        linked devices exists.
-        """
-        linked = {
+        """Return the existing devices linked to the device of a device modification."""
+        return {
             device_id
             for device_id in linked_device_ids(config_entry)
-            if isinstance(async_get_device(self._hass, device_id), dr.DeviceEntry)
+            if device_id != modification_entry_id(config_entry)
+            and isinstance(async_get_device(self._hass, device_id), dr.DeviceEntry)
         }
-        if not linked:
-            return set()
-        return linked | {modification_entry_id(config_entry)}
 
     def get_original_entity_data(self, entity_id: str) -> dict[str, Any]:
         """Return the attribute values an entity would have without modifications."""

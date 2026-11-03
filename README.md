@@ -17,6 +17,7 @@ A custom integration to change devices and entities that other integrations prov
 * Create new devices and assign entities to them
 * Merge devices by moving all entities of several devices to one device
 * Link devices of different integrations that belong to the same hardware
+* Add connections like MAC addresses to devices, so other integrations recognize them
 * Change the device and category of single entities
 
 Every change is reverted as soon as you delete or disable the modification.
@@ -58,7 +59,9 @@ Fields are prefilled with the current values. Only fields you change are modifie
 
 Below the attributes you can assign entities of other devices, or entities without a device, to this device. Removing an entity from the list moves it back to its original device.
 
-Under *Linked devices* you can link other devices to this device, e.g. a device that two integrations provide separately. Linked devices are shown on each other's device page, while the devices and their entities stay separate. Device Tools links them by adding a shared identifier to all of them, so every linked device has to be provided by a different integration entry. Removing a device from the list unlinks it.
+Under *Linked devices* you can link other devices to this device, e.g. a device that two integrations provide separately, or all lights of a light group. The device and each linked device are shown on each other's device page, while the devices and their entities stay separate. Device Tools links them by adding a shared identifier to both devices, so a linked device has to be provided by a different integration entry than this device. Removing a device from the list unlinks it.
+
+Under *Connections* you can add connections to the device, e.g. a MAC or Bluetooth address. Integrations recognize devices by their connections. For example, device trackers of routers only create a device for a tracked MAC address if a device with that address already exists. Devices sharing a connection are shown as linked devices. The existing connections of the device are kept, and removing a connection from the list removes it from the device again. When creating a device with a MAC address, Home Assistant enables device trackers waiting for it automatically. When adding the MAC address to an existing device, enable a device tracker which was disabled because its device was unknown once yourself.
 
 ### Create a device
 
@@ -97,6 +100,10 @@ Modifications of Device Tools 1.x are migrated automatically when Home Assistant
 * Entities and devices that no longer exist are skipped.
 
 Device Tools 1.x did not persist original values. Until an integration updates its devices and entities for the first time after the upgrade, which usually happens on the next restart, the modified values are treated as original values.
+
+### Downgrading to 1.x
+
+Downgrading from 2.x to 1.x is not possible. Device Tools 2.x migrates the modifications to a new format when upgrading, which 1.x cannot read, so Home Assistant shows them as failed to migrate. To go back to 1.x, restore a backup made before upgrading to 2.x. Switching between 2.x versions is fine.
 
 ### Home Assistant 2026.8
 

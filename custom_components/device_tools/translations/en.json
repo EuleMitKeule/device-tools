@@ -13,7 +13,9 @@
             "invalid_configuration_url": "The configuration URL must start with http://, https:// or homeassistant://",
             "via_device_is_device": "A device cannot be connected via itself",
             "cannot_link_to_itself": "A device cannot be linked to itself",
-            "linked_devices_same_config_entry": "Linked devices must be provided by different integration entries, two of the selected devices belong to the same one"
+            "linked_devices_same_config_entry": "A linked device must be provided by a different integration entry than this device",
+            "invalid_connection": "One of the connections is invalid, MAC and Bluetooth addresses must consist of 6 hexadecimal bytes, e.g. aa:bb:cc:dd:ee:ff",
+            "connection_in_use": "One of the connections already belongs to another device of the same integration entry"
         },
         "step": {
             "user": {
@@ -95,12 +97,22 @@
                     },
                     "device_linking": {
                         "name": "Linked devices",
-                        "description": "Show other devices of the same hardware as linked devices on the device page, e.g. the same device added through two integrations. The devices and their entities are kept separate.",
+                        "description": "Show other devices, e.g. the same device added through another integration, as linked devices on the device page. The devices and their entities are kept separate.",
                         "data": {
                             "linked_device_ids": "Linked devices"
                         },
                         "data_description": {
-                            "linked_device_ids": "The devices to link to this device. Every device must be provided by a different integration entry. Removing a device here unlinks it."
+                            "linked_device_ids": "The devices to link to this device. They must be provided by a different integration entry than this device, several devices of the same integration can be linked. Removing a device here unlinks it."
+                        }
+                    },
+                    "device_connections": {
+                        "name": "Connections",
+                        "description": "Add connections like a MAC address to the device. Other integrations recognize the device by them, e.g. device trackers of routers, and devices with the same connection are shown as linked devices.",
+                        "data": {
+                            "connections": "Connections"
+                        },
+                        "data_description": {
+                            "connections": "The connections added to the device. Its existing connections are kept. Removing a connection here removes it from the device."
                         }
                     }
                 }
@@ -150,7 +162,9 @@
             "invalid_configuration_url": "The configuration URL must start with http://, https:// or homeassistant://",
             "via_device_is_device": "A device cannot be connected via itself",
             "cannot_link_to_itself": "A device cannot be linked to itself",
-            "linked_devices_same_config_entry": "Linked devices must be provided by different integration entries, two of the selected devices belong to the same one"
+            "linked_devices_same_config_entry": "A linked device must be provided by a different integration entry than this device",
+            "invalid_connection": "One of the connections is invalid, MAC and Bluetooth addresses must consist of 6 hexadecimal bytes, e.g. aa:bb:cc:dd:ee:ff",
+            "connection_in_use": "One of the connections already belongs to another device of the same integration entry"
         },
         "step": {
             "init": {
@@ -206,12 +220,22 @@
                     },
                     "device_linking": {
                         "name": "Linked devices",
-                        "description": "Show other devices of the same hardware as linked devices on the device page, e.g. the same device added through two integrations. The devices and their entities are kept separate.",
+                        "description": "Show other devices, e.g. the same device added through another integration, as linked devices on the device page. The devices and their entities are kept separate.",
                         "data": {
                             "linked_device_ids": "Linked devices"
                         },
                         "data_description": {
-                            "linked_device_ids": "The devices to link to this device. Every device must be provided by a different integration entry. Removing a device here unlinks it."
+                            "linked_device_ids": "The devices to link to this device. They must be provided by a different integration entry than this device, several devices of the same integration can be linked. Removing a device here unlinks it."
+                        }
+                    },
+                    "device_connections": {
+                        "name": "Connections",
+                        "description": "Add connections like a MAC address to the device. Other integrations recognize the device by them, e.g. device trackers of routers, and devices with the same connection are shown as linked devices.",
+                        "data": {
+                            "connections": "Connections"
+                        },
+                        "data_description": {
+                            "connections": "The connections added to the device. Its existing connections are kept. Removing a connection here removes it from the device."
                         }
                     },
                     "entity_attributes": {
@@ -259,6 +283,18 @@
             "options": {
                 "none": "Device",
                 "service": "Service"
+            }
+        },
+        "connection": {
+            "fields": {
+                "type": {
+                    "name": "Type",
+                    "description": "The type of the connection"
+                },
+                "value": {
+                    "name": "Value",
+                    "description": "The address, e.g. aa:bb:cc:dd:ee:ff"
+                }
             }
         }
     },

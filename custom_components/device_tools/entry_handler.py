@@ -13,6 +13,7 @@ from homeassistant.helpers import device_registry as dr, entity_registry as er
 from homeassistant.helpers.entity import EntityCategory
 
 from .const import (
+    CONF_CONNECTIONS,
     CONF_ENTITY_CATEGORY,
     CONF_ENTRY_TYPE,
     CONF_IDENTIFIERS,
@@ -210,7 +211,9 @@ class DeviceHandler(EntryHandler):
         dr.async_get(self._hass).async_update_device(
             self._entry_id,
             **{
-                f"new_{key}" if key == CONF_IDENTIFIERS else key: _decode(key, value)
+                f"new_{key}"
+                if key in UNION_ATTRIBUTES[ModificationType.DEVICE]
+                else key: _decode(key, value)
                 for key, value in changes.items()
             },
         )
@@ -276,7 +279,8 @@ def _without_additions(key: str, value: Any, desired_value: Any) -> Any:
         {
             tuple(item)
             for item in value or []
-            if tuple(item) not in additions and not is_link_identifier(item)
+            if tuple(item) not in additions
+            and not (key == CONF_IDENTIFIERS and is_link_identifier(item))
         },
     )
 
@@ -285,7 +289,7 @@ def _encode(key: str, value: Any) -> Any:
     """Return the JSON representation of a registry attribute value."""
     if key in (CONF_ENTITY_CATEGORY, CONF_ENTRY_TYPE) and value is not None:
         return str(value)
-    if key == CONF_IDENTIFIERS:
+    if key in (CONF_IDENTIFIERS, CONF_CONNECTIONS):
         return sorted([str(domain), str(item_id)] for domain, item_id in value)
     return value
 
@@ -298,6 +302,6 @@ def _decode(key: str, value: Any) -> Any:
         return EntityCategory(value)
     if key == CONF_ENTRY_TYPE:
         return dr.DeviceEntryType(value)
-    if key == CONF_IDENTIFIERS:
+    if key in (CONF_IDENTIFIERS, CONF_CONNECTIONS):
         return {(domain, item_id) for domain, item_id in value}
     return value

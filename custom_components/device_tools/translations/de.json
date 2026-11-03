@@ -13,7 +13,9 @@
             "invalid_configuration_url": "Die Konfigurations-URL muss mit http://, https:// oder homeassistant:// beginnen",
             "via_device_is_device": "Ein Gerät kann nicht über sich selbst verbunden sein",
             "cannot_link_to_itself": "Ein Gerät kann nicht mit sich selbst verknüpft werden",
-            "linked_devices_same_config_entry": "Verknüpfte Geräte müssen von verschiedenen Integrationseinträgen stammen, zwei der ausgewählten Geräte gehören zum selben"
+            "linked_devices_same_config_entry": "Ein verknüpftes Gerät muss von einem anderen Integrationseintrag stammen als dieses Gerät",
+            "invalid_connection": "Eine der Verbindungen ist ungültig, MAC- und Bluetooth-Adressen müssen aus 6 hexadezimalen Bytes bestehen, z. B. aa:bb:cc:dd:ee:ff",
+            "connection_in_use": "Eine der Verbindungen gehört bereits zu einem anderen Gerät desselben Integrationseintrags"
         },
         "step": {
             "user": {
@@ -95,12 +97,22 @@
                     },
                     "device_linking": {
                         "name": "Verknüpfte Geräte",
-                        "description": "Andere Geräte derselben Hardware auf der Geräteseite als verknüpfte Geräte anzeigen, z. B. dasselbe Gerät, das über zwei Integrationen eingebunden ist. Die Geräte und ihre Entitäten bleiben getrennt.",
+                        "description": "Andere Geräte, z. B. dasselbe Gerät aus einer anderen Integration, auf der Geräteseite als verknüpfte Geräte anzeigen. Die Geräte und ihre Entitäten bleiben getrennt.",
                         "data": {
                             "linked_device_ids": "Verknüpfte Geräte"
                         },
                         "data_description": {
-                            "linked_device_ids": "Die Geräte, die mit diesem Gerät verknüpft werden sollen. Jedes Gerät muss von einem anderen Integrationseintrag stammen. Ein hier entferntes Gerät wird nicht mehr verknüpft."
+                            "linked_device_ids": "Die Geräte, die mit diesem Gerät verknüpft werden sollen. Sie müssen von einem anderen Integrationseintrag stammen als dieses Gerät, mehrere Geräte derselben Integration sind möglich. Ein hier entferntes Gerät wird nicht mehr verknüpft."
+                        }
+                    },
+                    "device_connections": {
+                        "name": "Verbindungen",
+                        "description": "Verbindungen wie eine MAC-Adresse zum Gerät hinzufügen. Andere Integrationen erkennen das Gerät daran wieder, z. B. Device Tracker von Routern, und Geräte mit derselben Verbindung werden als verknüpfte Geräte angezeigt.",
+                        "data": {
+                            "connections": "Verbindungen"
+                        },
+                        "data_description": {
+                            "connections": "Die Verbindungen, die zum Gerät hinzugefügt werden. Vorhandene Verbindungen bleiben erhalten. Eine hier entfernte Verbindung wird vom Gerät entfernt."
                         }
                     }
                 }
@@ -150,7 +162,9 @@
             "invalid_configuration_url": "Die Konfigurations-URL muss mit http://, https:// oder homeassistant:// beginnen",
             "via_device_is_device": "Ein Gerät kann nicht über sich selbst verbunden sein",
             "cannot_link_to_itself": "Ein Gerät kann nicht mit sich selbst verknüpft werden",
-            "linked_devices_same_config_entry": "Verknüpfte Geräte müssen von verschiedenen Integrationseinträgen stammen, zwei der ausgewählten Geräte gehören zum selben"
+            "linked_devices_same_config_entry": "Ein verknüpftes Gerät muss von einem anderen Integrationseintrag stammen als dieses Gerät",
+            "invalid_connection": "Eine der Verbindungen ist ungültig, MAC- und Bluetooth-Adressen müssen aus 6 hexadezimalen Bytes bestehen, z. B. aa:bb:cc:dd:ee:ff",
+            "connection_in_use": "Eine der Verbindungen gehört bereits zu einem anderen Gerät desselben Integrationseintrags"
         },
         "step": {
             "init": {
@@ -206,12 +220,22 @@
                     },
                     "device_linking": {
                         "name": "Verknüpfte Geräte",
-                        "description": "Andere Geräte derselben Hardware auf der Geräteseite als verknüpfte Geräte anzeigen, z. B. dasselbe Gerät, das über zwei Integrationen eingebunden ist. Die Geräte und ihre Entitäten bleiben getrennt.",
+                        "description": "Andere Geräte, z. B. dasselbe Gerät aus einer anderen Integration, auf der Geräteseite als verknüpfte Geräte anzeigen. Die Geräte und ihre Entitäten bleiben getrennt.",
                         "data": {
                             "linked_device_ids": "Verknüpfte Geräte"
                         },
                         "data_description": {
-                            "linked_device_ids": "Die Geräte, die mit diesem Gerät verknüpft werden sollen. Jedes Gerät muss von einem anderen Integrationseintrag stammen. Ein hier entferntes Gerät wird nicht mehr verknüpft."
+                            "linked_device_ids": "Die Geräte, die mit diesem Gerät verknüpft werden sollen. Sie müssen von einem anderen Integrationseintrag stammen als dieses Gerät, mehrere Geräte derselben Integration sind möglich. Ein hier entferntes Gerät wird nicht mehr verknüpft."
+                        }
+                    },
+                    "device_connections": {
+                        "name": "Verbindungen",
+                        "description": "Verbindungen wie eine MAC-Adresse zum Gerät hinzufügen. Andere Integrationen erkennen das Gerät daran wieder, z. B. Device Tracker von Routern, und Geräte mit derselben Verbindung werden als verknüpfte Geräte angezeigt.",
+                        "data": {
+                            "connections": "Verbindungen"
+                        },
+                        "data_description": {
+                            "connections": "Die Verbindungen, die zum Gerät hinzugefügt werden. Vorhandene Verbindungen bleiben erhalten. Eine hier entfernte Verbindung wird vom Gerät entfernt."
                         }
                     },
                     "entity_attributes": {
@@ -259,6 +283,18 @@
             "options": {
                 "none": "Gerät",
                 "service": "Dienst"
+            }
+        },
+        "connection": {
+            "fields": {
+                "type": {
+                    "name": "Typ",
+                    "description": "Der Typ der Verbindung"
+                },
+                "value": {
+                    "name": "Wert",
+                    "description": "Die Adresse, z. B. aa:bb:cc:dd:ee:ff"
+                }
             }
         }
     },
