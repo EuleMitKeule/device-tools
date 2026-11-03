@@ -2,16 +2,20 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 from urllib.parse import urlparse
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr, entity_registry as er
+from homeassistant.helpers.device_registry import format_mac
 
 from .const import (
     CONF_ASSIGNED_ENTITIES,
+    CONF_CONNECTIONS,
     CONF_ENTITIES,
+    CONF_LINKED_DEVICE_IDS,
     CONF_MODIFICATION_DATA,
     CONF_MODIFICATION_ENTRY_ID,
     CONF_MODIFICATION_IS_CUSTOM_ENTRY,
@@ -19,6 +23,7 @@ from .const import (
     CONF_MODIFICATION_TYPE,
     CONFIGURATION_URL_SCHEMES,
     DOMAIN,
+    LINK_IDENTIFIER_PREFIX,
     ModificationType,
 )
 
@@ -86,6 +91,55 @@ def merge_sources(config_entry: ConfigEntry[Any]) -> dict[str, list[str]]:
 def assigned_entities(config_entry: ConfigEntry[Any]) -> list[str]:
     """Return the entity ids assigned to the device of a device modification."""
     return list(modification_data(config_entry).get(CONF_ASSIGNED_ENTITIES, []))
+
+
+def linked_device_ids(config_entry: ConfigEntry[Any]) -> list[str]:
+    """Return the device ids linked to the device of a device modification."""
+    return list(modification_data(config_entry).get(CONF_LINKED_DEVICE_IDS, []))
+
+
+def link_identifier(config_entry: ConfigEntry[Any], device_id: str) -> str:
+    """Return the identifier linking the device of a modification to another device.
+
+    Every linked device gets its own identifier, which the device of the
+    modification shares. So several devices of the same config entry can be linked
+    to it, as identifiers are unique within a config entry.
+    """
+    return f"{LINK_IDENTIFIER_PREFIX}{config_entry.entry_id}_{device_id}"
+
+
+def added_connections(config_entry: ConfigEntry[Any]) -> list[list[str]]:
+    """Return the connections a device modification adds to its device."""
+    return [
+        list(connection)
+        for connection in modification_data(config_entry).get(CONF_CONNECTIONS, [])
+    ]
+
+
+_MAC_PATTERN = re.compile(r"^([0-9a-f]{2}:){5}[0-9a-f]{2}$")
+
+
+def normalize_connection(connection_type: str, value: str) -> tuple[str, str] | None:
+    """Return a connection in the form integrations use, or None if it is invalid.
+
+    MAC addresses are normalized like the device registry does, so they match the
+    connections integrations register. Bluetooth addresses are upper case MAC
+    addresses, as used by the bluetooth integration.
+    """
+    connection_type = connection_type.strip()
+    value = value.strip()
+    if not connection_type or not value:
+        return None
+    if connection_type in (dr.CONNECTION_NETWORK_MAC, dr.CONNECTION_BLUETOOTH):
+        mac = format_mac(value)
+        if not _MAC_PATTERN.match(mac):
+            return None
+        if connection_type == dr.CONNECTION_BLUETOOTH:
+            mac = mac.upper()
+        return connection_type, mac
+    if connection_type == dr.CONNECTION_ZIGBEE:
+        return connection_type, value.lower()
+    return connection_type, value
 
 
 @callback

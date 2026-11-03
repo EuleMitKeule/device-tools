@@ -16,6 +16,7 @@ from .engine import ModificationEngine, async_resolve_references
 from .migration import async_migrate_entry
 from .original_data_store import OriginalDataStore
 from .utils import (
+    added_connections,
     modification_entry_id,
     modification_is_custom_entry,
     modification_type,
@@ -89,10 +90,18 @@ async def async_remove_entry(
 def _async_setup_custom_device(
     hass: HomeAssistant, config_entry: ConfigEntry[Any]
 ) -> None:
-    """Create or update the device a modification created."""
+    """Create or update the device a modification created.
+
+    The device is created with its connections, so integrations waiting for a
+    device with one of them, e.g. device trackers, notice it right away.
+    """
     device = dr.async_get(hass).async_get_or_create(
         config_entry_id=config_entry.entry_id,
         identifiers={(DOMAIN, config_entry.entry_id)},
+        connections={
+            (connection_type, value)
+            for connection_type, value in added_connections(config_entry)
+        },
         name=config_entry.data[CONF_MODIFICATION_ENTRY_NAME],
     )
     if device.id == modification_entry_id(config_entry):

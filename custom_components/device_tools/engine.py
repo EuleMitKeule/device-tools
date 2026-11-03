@@ -17,10 +17,13 @@ from homeassistant.helpers import (
 
 from .const import (
     CONF_ASSIGNED_ENTITIES,
+    CONF_CONNECTIONS,
     CONF_DEVICE_ID,
     CONF_ENTITIES,
     CONF_ENTITY_CATEGORY,
     CONF_ENTRY_TYPE,
+    CONF_IDENTIFIERS,
+    CONF_LINKED_DEVICE_IDS,
     CONF_MODIFICATION_DATA,
     CONF_MODIFICATION_ENTRY_ID,
     CONF_MODIFICATION_ORIGINAL_DATA,
@@ -38,12 +41,16 @@ from .entry_handler import (
     EntryHandler,
     get_device_data,
     get_entity_data,
+    is_link_identifier,
 )
 from .original_data_store import KIND_DEVICES, KIND_ENTITIES, OriginalDataStore
 from .utils import (
+    added_connections,
     assigned_entities,
     async_get_device,
     async_resolve_device_id,
+    link_identifier,
+    linked_device_ids,
     merge_sources,
     modification_data,
     modification_entry_id,
@@ -122,6 +129,7 @@ class ModificationEngine:
         if self._stale_original_data_forgotten:
             return
         self._stale_original_data_forgotten = True
+        self._async_remove_stale_link_identifiers()
         for kind, desired_data in (
             (KIND_ENTITIES, self.get_desired_entity_data),
             (KIND_DEVICES, self.get_desired_device_data),
@@ -137,6 +145,36 @@ class ModificationEngine:
                             target_id,
                         )
                         self._store.async_remove(kind, target_id, key)
+
+    @callback
+    def _async_remove_stale_link_identifiers(self) -> None:
+        """Remove link identifiers no loaded modification wants a device to have.
+
+        They are left over if a modification could not be unloaded properly, e.g.
+        because it failed to set up and was removed, or because an older version of
+        Device Tools was installed in the meantime.
+        """
+        device_registry = dr.async_get(self._hass)
+        for device in list(device_registry.devices):
+            desired = {
+                tuple(identifier)
+                for identifier in self.get_desired_device_data(device.id).get(
+                    CONF_IDENTIFIERS, []
+                )
+            }
+            stale = {
+                identifier
+                for identifier in device.identifiers
+                if is_link_identifier(identifier) and identifier not in desired
+            }
+            if not stale:
+                continue
+            _LOGGER.info(
+                "Removing stale link identifiers %s from device %s", stale, device.id
+            )
+            device_registry.async_update_device(
+                device.id, new_identifiers=device.identifiers - stale
+            )
 
     @callback
     def async_on_entry_loaded(self, config_entry: ConfigEntry[Any]) -> None:
@@ -186,6 +224,7 @@ class ModificationEngine:
         ir.async_delete_issue(
             self._hass, DOMAIN, f"{ISSUE_MISSING_REFERENCES}_{config_entry.entry_id}"
         )
+        self._async_remove_stale_link_identifiers()
         if not modification_is_custom_entry(config_entry):
             return
         self._async_remove_device_references(modification_entry_id(config_entry))
@@ -202,9 +241,17 @@ class ModificationEngine:
                         continue
                     del options[CONF_DEVICE_ID]
                 case ModificationType.DEVICE:
-                    if options.get(CONF_VIA_DEVICE_ID) != device_id:
+                    linked = options.get(CONF_LINKED_DEVICE_IDS, [])
+                    if options.get(CONF_VIA_DEVICE_ID) != device_id and (
+                        device_id not in linked
+                    ):
                         continue
-                    del options[CONF_VIA_DEVICE_ID]
+                    if options.get(CONF_VIA_DEVICE_ID) == device_id:
+                        del options[CONF_VIA_DEVICE_ID]
+                    if device_id in linked:
+                        options[CONF_LINKED_DEVICE_IDS] = [
+                            linked_id for linked_id in linked if linked_id != device_id
+                        ]
                 case ModificationType.MERGE:
                     sources = dict(data.get(CONF_MODIFICATION_ORIGINAL_DATA, {}))
                     if sources.pop(device_id, None) is None:
@@ -260,16 +307,29 @@ class ModificationEngine:
     def get_desired_device_data(self, device_id: str) -> dict[str, Any]:
         """Return the attribute values all modifications want a device to have."""
         desired_data: dict[str, Any] = {}
+        identifiers: list[list[str]] = []
+        connections: list[list[str]] = []
         for config_entry in self._sorted_config_entries():
-            if (
-                modification_type(config_entry) == ModificationType.DEVICE
-                and modification_entry_id(config_entry) == device_id
-            ):
+            if modification_type(config_entry) != ModificationType.DEVICE:
+                continue
+            linked = self._get_linked_devices(config_entry)
+            if modification_entry_id(config_entry) == device_id:
                 desired_data.update(
                     _filter_data(
                         ModificationType.DEVICE, modification_data(config_entry)
                     )
                 )
+                connections.extend(added_connections(config_entry))
+                identifiers.extend(
+                    [DOMAIN, link_identifier(config_entry, linked_id)]
+                    for linked_id in linked
+                )
+            elif device_id in linked:
+                identifiers.append([DOMAIN, link_identifier(config_entry, device_id)])
+        if identifiers:
+            desired_data[CONF_IDENTIFIERS] = sorted(identifiers)
+        if connections:
+            desired_data[CONF_CONNECTIONS] = sorted(connections)
 
         if (via_device_id := desired_data.get(CONF_VIA_DEVICE_ID)) is not None and (
             via_device_id == device_id
@@ -277,6 +337,15 @@ class ModificationEngine:
         ):
             del desired_data[CONF_VIA_DEVICE_ID]
         return desired_data
+
+    def _get_linked_devices(self, config_entry: ConfigEntry[Any]) -> set[str]:
+        """Return the existing devices linked to the device of a device modification."""
+        return {
+            device_id
+            for device_id in linked_device_ids(config_entry)
+            if device_id != modification_entry_id(config_entry)
+            and isinstance(async_get_device(self._hass, device_id), dr.DeviceEntry)
+        }
 
     def get_original_entity_data(self, entity_id: str) -> dict[str, Any]:
         """Return the attribute values an entity would have without modifications."""
@@ -308,7 +377,8 @@ class ModificationEngine:
                 return {modification_entry_id(config_entry)}, set()
             case ModificationType.DEVICE:
                 return set(assigned_entities(config_entry)), {
-                    modification_entry_id(config_entry)
+                    modification_entry_id(config_entry),
+                    *linked_device_ids(config_entry),
                 }
             case ModificationType.MERGE:
                 return {
@@ -669,6 +739,12 @@ def async_resolve_references(
     for key in (CONF_DEVICE_ID, CONF_VIA_DEVICE_ID):
         if (device_id := options.get(key)) is not None:
             options[key] = resolve(device_id)
+    if CONF_LINKED_DEVICE_IDS in options:
+        options[CONF_LINKED_DEVICE_IDS] = list(
+            dict.fromkeys(
+                resolve(device_id) for device_id in linked_device_ids(config_entry)
+            )
+        )
     if modification_type(config_entry) == ModificationType.MERGE:
         data[CONF_MODIFICATION_ORIGINAL_DATA] = _resolve_merge_sources(
             data[CONF_MODIFICATION_ORIGINAL_DATA],
@@ -729,7 +805,8 @@ def _referenced_ids(config_entry: ConfigEntry[Any]) -> tuple[set[str], set[str]]
             return {modification_entry_id(config_entry)}, device_ids
         case ModificationType.DEVICE:
             return set(assigned_entities(config_entry)), device_ids | {
-                modification_entry_id(config_entry)
+                modification_entry_id(config_entry),
+                *linked_device_ids(config_entry),
             }
         case ModificationType.MERGE:
             return set(), device_ids | {modification_entry_id(config_entry)}

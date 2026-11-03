@@ -9,6 +9,8 @@ CONF_DEVICE_ATTRIBUTES = "device_attributes"
 CONF_ENTITY_ATTRIBUTES = "entity_attributes"
 CONF_ENTITY_ASSIGNMENT = "entity_assignment"
 CONF_MERGE_OPTIONS = "merge_options"
+CONF_DEVICE_LINKING = "device_linking"
+CONF_DEVICE_CONNECTIONS = "device_connections"
 CONF_MODIFICATION_TYPE = "modification_type"
 CONF_MODIFICATION_ENTRY = "modification_entry"
 CONF_MODIFICATION_ENTRY_ID = "modification_entry_id"
@@ -27,12 +29,27 @@ CONF_VIA_DEVICE_ID = "via_device_id"
 CONF_CONFIGURATION_URL = "configuration_url"
 CONF_ENTRY_TYPE = "entry_type"
 CONF_CONNECTIONS = "connections"
+CONF_CONNECTION_TYPE = "type"
+CONF_CONNECTION_VALUE = "value"
 CONF_IDENTIFIERS = "identifiers"
 
 CONF_DEVICE_ID = "device_id"
 CONF_ENTITY_CATEGORY = "entity_category"
 
 CONF_ASSIGNED_ENTITIES = "assigned_entities"
+CONF_LINKED_DEVICE_IDS = "linked_device_ids"
+
+# Prefix of the identifiers Device Tools adds to linked devices. Home Assistant shows
+# devices sharing an identifier or connection as linked devices.
+LINK_IDENTIFIER_PREFIX = "link_"
+
+# Connection types known to the device registry and their labels.
+CONNECTION_TYPES = {
+    "mac": "MAC",
+    "bluetooth": "Bluetooth",
+    "zigbee": "Zigbee",
+    "upnp": "UPnP",
+}
 
 CONF_MERGE_DEVICE_IDS = "merge_device_ids"
 CONF_ENTITIES = "entities"
@@ -74,6 +91,15 @@ MODIFIABLE_ATTRIBUTES = {
         CONF_DEVICE_ID,
         CONF_ENTITY_CATEGORY,
     ],
+    ModificationType.MERGE: [],
+}
+
+# Attributes holding sets which modifications add values to instead of replacing
+# them, so values the integration adds or removes later are kept. They are set by
+# the engine, the user enters connections in their own form section.
+UNION_ATTRIBUTES = {
+    ModificationType.DEVICE: [CONF_IDENTIFIERS, CONF_CONNECTIONS],
+    ModificationType.ENTITY: [],
     ModificationType.MERGE: [],
 }
 

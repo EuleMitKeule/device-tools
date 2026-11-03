@@ -19,8 +19,13 @@ import voluptuous as vol
 from .const import (
     CONF_ASSIGNED_ENTITIES,
     CONF_CONFIGURATION_URL,
+    CONF_CONNECTION_TYPE,
+    CONF_CONNECTION_VALUE,
+    CONF_CONNECTIONS,
     CONF_DEVICE_ATTRIBUTES,
+    CONF_DEVICE_CONNECTIONS,
     CONF_DEVICE_ID,
+    CONF_DEVICE_LINKING,
     CONF_ENTITIES,
     CONF_ENTITY_ASSIGNMENT,
     CONF_ENTITY_ATTRIBUTES,
@@ -28,6 +33,7 @@ from .const import (
     CONF_ENTRY_TYPE,
     CONF_HW_VERSION,
     CONF_INFORMATION,
+    CONF_LINKED_DEVICE_IDS,
     CONF_MANUFACTURER,
     CONF_MERGE_DEVICE_IDS,
     CONF_MERGE_OPTIONS,
@@ -43,6 +49,7 @@ from .const import (
     CONF_SERIAL_NUMBER,
     CONF_SW_VERSION,
     CONF_VIA_DEVICE_ID,
+    CONNECTION_TYPES,
     DOMAIN,
     ENTITY_CATEGORY_DEFAULT,
     ENTITY_CATEGORY_OPTIONS,
@@ -62,6 +69,7 @@ from .utils import (
     modification_type,
     name_for_device,
     name_for_entity,
+    normalize_connection,
 )
 
 DEVICE_TEXT_ATTRIBUTES = [
@@ -139,6 +147,11 @@ def _get_device_schema(
 ) -> vol.Schema:
     """Return the schema of a device modification."""
     assigned_entities: list[str] = modification_data.get(CONF_ASSIGNED_ENTITIES, [])
+    linked_device_ids: list[str] = modification_data.get(CONF_LINKED_DEVICE_IDS, [])
+    connections: list[dict[str, str]] = [
+        {CONF_CONNECTION_TYPE: connection_type, CONF_CONNECTION_VALUE: value}
+        for connection_type, value in modification_data.get(CONF_CONNECTIONS, [])
+    ]
     native_entities = (
         [
             entity.entity_id
@@ -198,6 +211,60 @@ def _get_device_schema(
                         ),
                     }
                 )
+            ),
+            vol.Optional(CONF_DEVICE_LINKING): section(
+                vol.Schema(
+                    {
+                        vol.Optional(
+                            CONF_LINKED_DEVICE_IDS,
+                            description={"suggested_value": linked_device_ids},
+                        ): selector.DeviceSelector(
+                            selector.DeviceSelectorConfig(multiple=True)
+                        ),
+                    }
+                ),
+                {"collapsed": not linked_device_ids},
+            ),
+            vol.Optional(CONF_DEVICE_CONNECTIONS): section(
+                vol.Schema(
+                    {
+                        vol.Optional(
+                            CONF_CONNECTIONS,
+                            description={"suggested_value": connections},
+                        ): selector.ObjectSelector(
+                            selector.ObjectSelectorConfig(
+                                fields={
+                                    CONF_CONNECTION_TYPE: {
+                                        "required": True,
+                                        "selector": selector.SelectSelector(
+                                            selector.SelectSelectorConfig(
+                                                # The frontend does not translate
+                                                # options nested in an object, so
+                                                # they get language neutral labels.
+                                                options=[
+                                                    selector.SelectOptionDict(
+                                                        value=value, label=label
+                                                    )
+                                                    for value, label in CONNECTION_TYPES.items()
+                                                ],
+                                                mode=selector.SelectSelectorMode.DROPDOWN,
+                                            )
+                                        ),
+                                    },
+                                    CONF_CONNECTION_VALUE: {
+                                        "required": True,
+                                        "selector": selector.TextSelector(),
+                                    },
+                                },
+                                multiple=True,
+                                label_field=CONF_CONNECTION_VALUE,
+                                description_field=CONF_CONNECTION_TYPE,
+                                translation_key="connection",
+                            )
+                        ),
+                    }
+                ),
+                {"collapsed": not connections},
             ),
         }
     )
@@ -315,7 +382,46 @@ def _user_input_to_modification_data(
             dict.fromkeys(assigned_entities)
         )
 
+    if mod_type == ModificationType.DEVICE and (
+        linked_device_ids := user_input.get(CONF_DEVICE_LINKING, {}).get(
+            CONF_LINKED_DEVICE_IDS
+        )
+    ):
+        modification_data[CONF_LINKED_DEVICE_IDS] = list(
+            dict.fromkeys(linked_device_ids)
+        )
+
+    if mod_type == ModificationType.DEVICE and (
+        connections := _form_connections(
+            user_input.get(CONF_DEVICE_CONNECTIONS, {}).get(CONF_CONNECTIONS) or [],
+            original_data.get(CONF_CONNECTIONS) or [],
+        )
+    ):
+        modification_data[CONF_CONNECTIONS] = connections
+
     return modification_data
+
+
+def _form_connections(
+    form_connections: list[dict[str, Any]], original_connections: list[list[str]]
+) -> list[list[str]]:
+    """Return the connections entered in the form which the device does not have.
+
+    Valid connections are normalized, invalid ones are kept as entered so the
+    validation can report them.
+    """
+    original = {tuple(connection) for connection in original_connections}
+    connections: list[list[str]] = []
+    for connection in form_connections:
+        entered = (
+            str(connection.get(CONF_CONNECTION_TYPE, "")),
+            str(connection.get(CONF_CONNECTION_VALUE, "")),
+        )
+        normalized = normalize_connection(*entered) or entered
+        if normalized in original or list(normalized) in connections:
+            continue
+        connections.append(list(normalized))
+    return connections
 
 
 def _validate_modification_data(
@@ -337,7 +443,73 @@ def _validate_modification_data(
         async_get_device(hass, device_id) is None
     ):
         errors["base"] = "entry_not_found"
+    if linked_device_ids := modification_data.get(CONF_LINKED_DEVICE_IDS):
+        errors.update(
+            _validate_linked_device_ids(hass, modification_entry_id, linked_device_ids)
+        )
+    if connections := modification_data.get(CONF_CONNECTIONS):
+        errors.update(_validate_connections(hass, modification_entry_id, connections))
     return errors
+
+
+def _validate_connections(
+    hass: HomeAssistant,
+    modification_entry_id: str | None,
+    connections: list[list[str]],
+) -> dict[str, str]:
+    """Return form errors of the connections to add.
+
+    Connections are unique within a config entry, so they must not belong to
+    another device of the same config entry.
+    """
+    if any(normalize_connection(*connection) is None for connection in connections):
+        return {"base": "invalid_connection"}
+    if modification_entry_id is None or not isinstance(
+        device := async_get_device(hass, modification_entry_id), dr.DeviceEntry
+    ):
+        return {}
+    if any(
+        other.id != device.id
+        for other in dr.async_get(hass).async_get_devices(
+            connections={
+                (connection_type, value) for connection_type, value in connections
+            },
+            config_entry_id=device.config_entry_id,
+        )
+    ):
+        return {"base": "connection_in_use"}
+    return {}
+
+
+def _validate_linked_device_ids(
+    hass: HomeAssistant,
+    modification_entry_id: str | None,
+    linked_device_ids: list[str],
+) -> dict[str, str]:
+    """Return form errors of the devices to link.
+
+    Each linked device shares an identifier with the modified device. Identifiers
+    are unique within a config entry, so a linked device must not belong to the
+    config entry of the modified device.
+    """
+    if modification_entry_id in linked_device_ids:
+        return {"base": "cannot_link_to_itself"}
+    target = (
+        async_get_device(hass, modification_entry_id)
+        if modification_entry_id is not None
+        else None
+    )
+    for device_id in linked_device_ids:
+        if (device := async_get_device(hass, device_id)) is None:
+            return {"base": "entry_not_found"}
+        if not isinstance(device, dr.DeviceEntry):
+            return {"base": "child_device"}
+        if (
+            isinstance(target, dr.DeviceEntry)
+            and device.config_entry_id == target.config_entry_id
+        ):
+            return {"base": "linked_devices_same_config_entry"}
+    return {}
 
 
 def _validate_merge_device_ids(

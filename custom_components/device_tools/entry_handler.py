@@ -13,9 +13,14 @@ from homeassistant.helpers import device_registry as dr, entity_registry as er
 from homeassistant.helpers.entity import EntityCategory
 
 from .const import (
+    CONF_CONNECTIONS,
     CONF_ENTITY_CATEGORY,
     CONF_ENTRY_TYPE,
+    CONF_IDENTIFIERS,
+    DOMAIN,
+    LINK_IDENTIFIER_PREFIX,
     MODIFIABLE_ATTRIBUTES,
+    UNION_ATTRIBUTES,
     ModificationType,
 )
 from .original_data_store import KIND_DEVICES, KIND_ENTITIES, OriginalDataStore
@@ -89,11 +94,15 @@ class EntryHandler(ABC):
             else {}
         )
 
-        for key, value in desired_data.items():
+        for key, desired_value in desired_data.items():
             if key not in original_data:
-                self._store.async_set(
-                    self.kind, self._entry_id, key, current_data.get(key)
+                original_data[key] = _without_additions(
+                    key, current_data.get(key), desired_value
                 )
+                self._store.async_set(
+                    self.kind, self._entry_id, key, original_data[key]
+                )
+            value = _effective_value(key, desired_value, original_data[key])
             if current_data.get(key) != value:
                 changes[key] = value
 
@@ -135,8 +144,10 @@ class EntryHandler(ABC):
         for key in changed_keys:
             if key not in desired_data or key not in original_data:
                 continue
-            if (value := current_data.get(key)) == desired_data[key]:
+            value = current_data.get(key)
+            if value == _effective_value(key, desired_data[key], original_data[key]):
                 continue
+            value = _without_additions(key, value, desired_data[key])
             _LOGGER.debug(
                 "Original value of %s of %s %s changed to %s",
                 key,
@@ -199,7 +210,12 @@ class DeviceHandler(EntryHandler):
         """Write attribute values to the device registry."""
         dr.async_get(self._hass).async_update_device(
             self._entry_id,
-            **{key: _decode(key, value) for key, value in changes.items()},
+            **{
+                f"new_{key}"
+                if key in UNION_ATTRIBUTES[ModificationType.DEVICE]
+                else key: _decode(key, value)
+                for key, value in changes.items()
+            },
         )
 
 
@@ -220,14 +236,61 @@ def get_device_data(hass: HomeAssistant, device_id: str) -> dict[str, Any] | Non
         return None
     return {
         key: _encode(key, getattr(device, key))
-        for key in MODIFIABLE_ATTRIBUTES[ModificationType.DEVICE]
+        for key in (
+            *MODIFIABLE_ATTRIBUTES[ModificationType.DEVICE],
+            *UNION_ATTRIBUTES[ModificationType.DEVICE],
+        )
     }
+
+
+def is_link_identifier(identifier: tuple[str, str] | list[str]) -> bool:
+    """Return whether an identifier was added by Device Tools to link devices."""
+    domain, value = identifier
+    return domain == DOMAIN and value.startswith(LINK_IDENTIFIER_PREFIX)
+
+
+def _effective_value(key: str, desired_value: Any, original_value: Any) -> Any:
+    """Return the value an attribute should have.
+
+    Values of set attributes are added to the original value, other values replace
+    it.
+    """
+    if key not in UNION_ATTRIBUTES[ModificationType.DEVICE]:
+        return desired_value
+    return _encode(
+        key,
+        {tuple(item) for item in original_value or []}
+        | {tuple(item) for item in desired_value},
+    )
+
+
+def _without_additions(key: str, value: Any, desired_value: Any) -> Any:
+    """Return the original value of an attribute, given its current value.
+
+    Values a modification added to a set attribute are not part of its original
+    value. Neither are link identifiers left over from a modification which could
+    not be unloaded properly.
+    """
+    if key not in UNION_ATTRIBUTES[ModificationType.DEVICE]:
+        return value
+    additions = {tuple(item) for item in desired_value}
+    return _encode(
+        key,
+        {
+            tuple(item)
+            for item in value or []
+            if tuple(item) not in additions
+            and not (key == CONF_IDENTIFIERS and is_link_identifier(item))
+        },
+    )
 
 
 def _encode(key: str, value: Any) -> Any:
     """Return the JSON representation of a registry attribute value."""
     if key in (CONF_ENTITY_CATEGORY, CONF_ENTRY_TYPE) and value is not None:
         return str(value)
+    if key in (CONF_IDENTIFIERS, CONF_CONNECTIONS):
+        return sorted([str(domain), str(item_id)] for domain, item_id in value)
     return value
 
 
@@ -239,4 +302,6 @@ def _decode(key: str, value: Any) -> Any:
         return EntityCategory(value)
     if key == CONF_ENTRY_TYPE:
         return dr.DeviceEntryType(value)
+    if key in (CONF_IDENTIFIERS, CONF_CONNECTIONS):
+        return {(domain, item_id) for domain, item_id in value}
     return value
