@@ -57,6 +57,8 @@ Fields are prefilled with the current values. Only fields you change are modifie
 
 Below the attributes you can assign entities of other devices, or entities without a device, to this device. Removing an entity from the list moves it back to its original device.
 
+To assign many entities at once, paste their entity ids into **Paste entities**, separated by commas or new lines. Wildcards add all matching entities, e.g. `sensor.inverter_*`. Entities that already belong to the device are skipped, and the pasted entities are added to the assigned entities when you submit.
+
 ### Create a device
 
 Creates a new device with the name you enter. Everything else works like changing a device, so you can set its attributes and assign entities to it. This is useful for entities without a device, e.g. from Modbus, MQTT, templates or helpers.

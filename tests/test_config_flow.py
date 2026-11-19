@@ -16,6 +16,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.device_tools.const import (
     CONF_ASSIGNED_ENTITIES,
+    CONF_BULK_ENTITIES,
     CONF_CONFIGURATION_URL,
     CONF_DEVICE_ATTRIBUTES,
     CONF_DEVICE_ID,
@@ -426,3 +427,85 @@ async def test_flow_before_setup(
     await hass.async_block_till_done()
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert dr.async_get(hass).async_get(device.id).manufacturer == "Changed"
+
+
+async def test_bulk_entities_flow(
+    hass: HomeAssistant, source_entry: MockConfigEntry
+) -> None:
+    device = create_device(hass, source_entry, "a")
+    other_device = create_device(hass, source_entry, "b")
+    native = create_entity(
+        hass, source_entry, "native", device, suggested_object_id="test_inverter_0"
+    )
+    inverter_1 = create_entity(
+        hass, source_entry, "1", other_device, suggested_object_id="test_inverter_1"
+    )
+    inverter_2 = create_entity(hass, source_entry, "inverter_2")
+    picked = create_entity(hass, source_entry, "picked")
+    pasted = create_entity(hass, source_entry, "pasted")
+    create_entity(hass, source_entry, "unrelated")
+    flow_id = await _start(hass, "device")
+    await hass.config_entries.flow.async_configure(
+        flow_id, {CONF_MODIFICATION_ENTRY_ID: device.id}
+    )
+
+    result = await hass.config_entries.flow.async_configure(
+        flow_id,
+        {
+            CONF_DEVICE_ATTRIBUTES: {},
+            CONF_ENTITY_ASSIGNMENT: {
+                CONF_BULK_ENTITIES: "sensor.test_inverter_*\nsensor.missing, light.*"
+            },
+        },
+    )
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {"base": "bulk_entities_not_found"}
+    assert result["description_placeholders"]["entities"] == ("sensor.missing, light.*")
+
+    result = await hass.config_entries.flow.async_configure(
+        flow_id,
+        {
+            CONF_DEVICE_ATTRIBUTES: {},
+            CONF_ENTITY_ASSIGNMENT: {
+                CONF_ASSIGNED_ENTITIES: [picked.entity_id],
+                CONF_BULK_ENTITIES: (
+                    f"SENSOR.TEST_INVERTER_*\n{pasted.entity_id}; {picked.entity_id}"
+                ),
+            },
+        },
+    )
+    await hass.async_block_till_done()
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assigned = [
+        picked.entity_id,
+        inverter_1.entity_id,
+        inverter_2.entity_id,
+        pasted.entity_id,
+    ]
+    assert result["options"] == {
+        CONF_MODIFICATION_DATA: {CONF_ASSIGNED_ENTITIES: assigned}
+    }
+    entity_registry = er.async_get(hass)
+    for entity_id in [*assigned, native.entity_id]:
+        assert entity_registry.async_get(entity_id).device_id == device.id
+
+    config_entry = result["result"]
+    other = create_entity(hass, source_entry, "other")
+    result = await hass.config_entries.options.async_init(config_entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {
+            CONF_DEVICE_ATTRIBUTES: {},
+            CONF_ENTITY_ASSIGNMENT: {
+                CONF_ASSIGNED_ENTITIES: assigned,
+                CONF_BULK_ENTITIES: other.entity_id,
+            },
+        },
+    )
+    await hass.async_block_till_done()
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert config_entry.options[CONF_MODIFICATION_DATA][CONF_ASSIGNED_ENTITIES] == [
+        *assigned,
+        other.entity_id,
+    ]
+    assert entity_registry.async_get(other.entity_id).device_id == device.id

@@ -33,6 +33,7 @@ CONF_DEVICE_ID = "device_id"
 CONF_ENTITY_CATEGORY = "entity_category"
 
 CONF_ASSIGNED_ENTITIES = "assigned_entities"
+CONF_BULK_ENTITIES = "bulk_entities"
 
 CONF_MERGE_DEVICE_IDS = "merge_device_ids"
 CONF_ENTITIES = "entities"

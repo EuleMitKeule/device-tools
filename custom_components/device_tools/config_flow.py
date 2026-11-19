@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from fnmatch import fnmatchcase
+import re
 from typing import TYPE_CHECKING, Any
 import uuid
 
@@ -18,6 +20,7 @@ import voluptuous as vol
 
 from .const import (
     CONF_ASSIGNED_ENTITIES,
+    CONF_BULK_ENTITIES,
     CONF_CONFIGURATION_URL,
     CONF_DEVICE_ATTRIBUTES,
     CONF_DEVICE_ID,
@@ -73,6 +76,10 @@ DEVICE_TEXT_ATTRIBUTES = [
     CONF_SERIAL_NUMBER,
     CONF_CONFIGURATION_URL,
 ]
+
+
+BULK_ENTITIES_SEPARATOR = re.compile(r"[\s,;]+")
+WILDCARD_CHARACTERS = frozenset("*?[")
 
 
 def _to_form_value(key: str, value: Any) -> Any:
@@ -131,27 +138,58 @@ def _get_information_schema(
     }
 
 
+def _native_entities(
+    hass: HomeAssistant,
+    modification_entry_id: str | None,
+    assigned_entities: list[str],
+) -> list[str]:
+    """Return the entities belonging to a device without being assigned to it."""
+    if modification_entry_id is None:
+        return []
+    return [
+        entity.entity_id
+        for entity in er.async_entries_for_device(
+            er.async_get(hass), modification_entry_id, include_disabled_entities=True
+        )
+        if entity.entity_id not in assigned_entities
+    ]
+
+
+def _parse_bulk_entities(
+    hass: HomeAssistant, value: str | None, excluded_entities: list[str]
+) -> tuple[list[str], list[str]]:
+    """Return the entity ids matched by pasted entity ids and patterns.
+
+    Entity ids are separated by whitespace, commas or semicolons and may contain
+    shell-style wildcards like sensor.inverter_*. Returns the matched entity ids and
+    the entity ids or patterns that did not match any entity.
+    """
+    entity_ids = sorted(er.async_get(hass).entities)
+    matched: dict[str, None] = {}
+    unmatched: list[str] = []
+    for token in BULK_ENTITIES_SEPARATOR.split((value or "").strip().lower()):
+        if not token:
+            continue
+        if WILDCARD_CHARACTERS.isdisjoint(token):
+            matches = [token] if token in entity_ids else []
+        else:
+            matches = [e for e in entity_ids if fnmatchcase(e, token)]
+        if not matches:
+            unmatched.append(token)
+        matched.update(dict.fromkeys(m for m in matches if m not in excluded_entities))
+    return list(matched), unmatched
+
+
 def _get_device_schema(
     hass: HomeAssistant,
     modification_entry_id: str | None,
     modification_data: dict[str, Any],
     original_data: dict[str, Any],
+    bulk_entities: str | None = None,
 ) -> vol.Schema:
     """Return the schema of a device modification."""
     assigned_entities: list[str] = modification_data.get(CONF_ASSIGNED_ENTITIES, [])
-    native_entities = (
-        [
-            entity.entity_id
-            for entity in er.async_entries_for_device(
-                er.async_get(hass),
-                modification_entry_id,
-                include_disabled_entities=True,
-            )
-            if entity.entity_id not in assigned_entities
-        ]
-        if modification_entry_id is not None
-        else []
-    )
+    native_entities = _native_entities(hass, modification_entry_id, assigned_entities)
     attributes: dict[vol.Marker, Any] = {
         vol.Optional(
             key, description=_suggested(key, modification_data, original_data)
@@ -195,6 +233,12 @@ def _get_device_schema(
                             selector.EntitySelectorConfig(
                                 multiple=True, exclude_entities=native_entities
                             )
+                        ),
+                        vol.Optional(
+                            CONF_BULK_ENTITIES,
+                            description={"suggested_value": bulk_entities},
+                        ): selector.TextSelector(
+                            selector.TextSelectorConfig(multiline=True)
                         ),
                     }
                 )
@@ -265,12 +309,17 @@ def _get_modification_schema(
     original_data: dict[str, Any],
     *,
     information: bool,
+    bulk_entities: str | None = None,
 ) -> vol.Schema:
     """Return the schema to edit a modification."""
     match mod_type:
         case ModificationType.DEVICE:
             schema = _get_device_schema(
-                hass, modification_entry_id, modification_data, original_data
+                hass,
+                modification_entry_id,
+                modification_data,
+                original_data,
+                bulk_entities,
             )
         case ModificationType.ENTITY:
             schema = _get_entity_schema(modification_data, original_data)
@@ -316,6 +365,37 @@ def _user_input_to_modification_data(
         )
 
     return modification_data
+
+
+def _bulk_entities(user_input: dict[str, Any]) -> str | None:
+    """Return the pasted entity ids and patterns of a submitted form."""
+    return user_input.get(CONF_ENTITY_ASSIGNMENT, {}).get(CONF_BULK_ENTITIES)
+
+
+def _apply_bulk_entities(
+    hass: HomeAssistant,
+    modification_entry_id: str | None,
+    bulk_entities: str | None,
+    modification_data: dict[str, Any],
+) -> list[str]:
+    """Add pasted entities to the assigned entities of a device modification.
+
+    Returns the entity ids and patterns that did not match any entity, in which
+    case the assigned entities are left untouched.
+    """
+    if not bulk_entities:
+        return []
+    assigned_entities: list[str] = modification_data.get(CONF_ASSIGNED_ENTITIES, [])
+    matched, unmatched = _parse_bulk_entities(
+        hass,
+        bulk_entities,
+        _native_entities(hass, modification_entry_id, assigned_entities),
+    )
+    if unmatched:
+        return unmatched
+    if all_entities := list(dict.fromkeys([*assigned_entities, *matched])):
+        modification_data[CONF_ASSIGNED_ENTITIES] = all_entities
+    return []
 
 
 def _validate_modification_data(
@@ -522,15 +602,25 @@ class DeviceToolsConfigFlow(ConfigFlow, domain=DOMAIN):
             self.hass, self._modification_type, self._modification_entry_id
         )
         errors: dict[str, str] = {}
+        bulk_entities: str | None = None
+        unmatched: list[str] = []
         if user_input is not None:
             self._modification_data = _user_input_to_modification_data(
                 self._modification_type, user_input, original_data
             )
-            if not (
-                errors := _validate_modification_data(
-                    self.hass, self._modification_entry_id, self._modification_data
-                )
-            ):
+            bulk_entities = _bulk_entities(user_input)
+            unmatched = _apply_bulk_entities(
+                self.hass,
+                self._modification_entry_id,
+                bulk_entities,
+                self._modification_data,
+            )
+            errors = _validate_modification_data(
+                self.hass, self._modification_entry_id, self._modification_data
+            )
+            if unmatched:
+                errors["base"] = "bulk_entities_not_found"
+            if not errors:
                 return self._async_create_modification()
 
         return self.async_show_form(
@@ -542,8 +632,12 @@ class DeviceToolsConfigFlow(ConfigFlow, domain=DOMAIN):
                 self._modification_data,
                 original_data,
                 information=False,
+                bulk_entities=bulk_entities if unmatched else None,
             ),
-            description_placeholders={"name": self._modification_entry_name},
+            description_placeholders={
+                "name": self._modification_entry_name,
+                "entities": ", ".join(unmatched),
+            },
             errors=errors,
         )
 
@@ -622,6 +716,8 @@ class OptionsFlowHandler(OptionsFlow):
             )
 
         errors: dict[str, str] = {}
+        bulk_entities: str | None = None
+        unmatched: list[str] = []
         if user_input is not None:
             if mod_type == ModificationType.MERGE:
                 merge_device_ids: list[str] = user_input.get(
@@ -642,11 +738,16 @@ class OptionsFlowHandler(OptionsFlow):
                 modification_data = _user_input_to_modification_data(
                     mod_type, user_input, original_data
                 )
-                if not (
-                    errors := _validate_modification_data(
-                        self.hass, modification_entry_id, modification_data
-                    )
-                ):
+                bulk_entities = _bulk_entities(user_input)
+                unmatched = _apply_bulk_entities(
+                    self.hass, modification_entry_id, bulk_entities, modification_data
+                )
+                errors = _validate_modification_data(
+                    self.hass, modification_entry_id, modification_data
+                )
+                if unmatched:
+                    errors["base"] = "bulk_entities_not_found"
+                if not errors:
                     return self.async_create_entry(
                         data={CONF_MODIFICATION_DATA: modification_data}
                     )
@@ -660,7 +761,9 @@ class OptionsFlowHandler(OptionsFlow):
                 modification_data,
                 original_data,
                 information=True,
+                bulk_entities=bulk_entities if unmatched else None,
             ),
+            description_placeholders={"entities": ", ".join(unmatched)},
             errors=errors,
         )
 
