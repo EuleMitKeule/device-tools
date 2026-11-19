@@ -11,7 +11,8 @@
             "device_already_merged": "Eines der ausgewählten Geräte wird bereits mit einem anderen Gerät zusammengeführt",
             "merge_chain": "Geräte können nicht mit einem Gerät zusammengeführt werden, das selbst mit einem anderen Gerät zusammengeführt wird",
             "invalid_configuration_url": "Die Konfigurations-URL muss mit http://, https:// oder homeassistant:// beginnen",
-            "via_device_is_device": "Ein Gerät kann nicht über sich selbst verbunden sein"
+            "via_device_is_device": "Ein Gerät kann nicht über sich selbst verbunden sein",
+            "bulk_entities_not_found": "Die folgenden Entitäten oder Muster passen zu keiner Entität: {entities}"
         },
         "step": {
             "user": {
@@ -85,10 +86,12 @@
                         "name": "Entitäten",
                         "description": "Entitäten anderer Geräte oder ohne Gerät diesem Gerät zuweisen",
                         "data": {
-                            "assigned_entities": "Zugewiesene Entitäten"
+                            "assigned_entities": "Zugewiesene Entitäten",
+                            "bulk_entities": "Entitäten einfügen"
                         },
                         "data_description": {
-                            "assigned_entities": "Die Entitäten, die an diesem Gerät angezeigt werden sollen. Entitäten, die bereits zum Gerät gehören, werden nicht aufgelistet. Entfernte Entitäten kehren zu ihrem ursprünglichen Gerät zurück."
+                            "assigned_entities": "Die Entitäten, die an diesem Gerät angezeigt werden sollen. Entitäten, die bereits zum Gerät gehören, werden nicht aufgelistet. Entfernte Entitäten kehren zu ihrem ursprünglichen Gerät zurück.",
+                            "bulk_entities": "Hinzuzufügende Entitäts-IDs, getrennt durch Kommas oder Zeilenumbrüche. Platzhalter wie sensor.inverter_* fügen alle passenden Entitäten hinzu. Entitäten, die bereits zum Gerät gehören, werden übersprungen."
                         }
                     }
                 }
@@ -136,7 +139,8 @@
             "device_already_merged": "Eines der ausgewählten Geräte wird bereits mit einem anderen Gerät zusammengeführt",
             "merge_chain": "Geräte können nicht mit einem Gerät zusammengeführt werden, das selbst mit einem anderen Gerät zusammengeführt wird",
             "invalid_configuration_url": "Die Konfigurations-URL muss mit http://, https:// oder homeassistant:// beginnen",
-            "via_device_is_device": "Ein Gerät kann nicht über sich selbst verbunden sein"
+            "via_device_is_device": "Ein Gerät kann nicht über sich selbst verbunden sein",
+            "bulk_entities_not_found": "Die folgenden Entitäten oder Muster passen zu keiner Entität: {entities}"
         },
         "step": {
             "init": {
@@ -184,10 +188,12 @@
                         "name": "Entitäten",
                         "description": "Entitäten anderer Geräte oder ohne Gerät diesem Gerät zuweisen",
                         "data": {
-                            "assigned_entities": "Zugewiesene Entitäten"
+                            "assigned_entities": "Zugewiesene Entitäten",
+                            "bulk_entities": "Entitäten einfügen"
                         },
                         "data_description": {
-                            "assigned_entities": "Die Entitäten, die an diesem Gerät angezeigt werden sollen. Entitäten, die bereits zum Gerät gehören, werden nicht aufgelistet. Entfernte Entitäten kehren zu ihrem ursprünglichen Gerät zurück."
+                            "assigned_entities": "Die Entitäten, die an diesem Gerät angezeigt werden sollen. Entitäten, die bereits zum Gerät gehören, werden nicht aufgelistet. Entfernte Entitäten kehren zu ihrem ursprünglichen Gerät zurück.",
+                            "bulk_entities": "Hinzuzufügende Entitäts-IDs, getrennt durch Kommas oder Zeilenumbrüche. Platzhalter wie sensor.inverter_* fügen alle passenden Entitäten hinzu. Entitäten, die bereits zum Gerät gehören, werden übersprungen."
                         }
                     },
                     "entity_attributes": {
